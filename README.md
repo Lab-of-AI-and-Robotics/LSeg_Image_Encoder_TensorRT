@@ -102,7 +102,7 @@ python3 conversion/model_to_onnx.py \
 * `--weights`: 체크포인트 경로
 
 ### 2. TensorRT 엔진 변환
-
+**주의**: TensorRT 변환은 GPU 및 환경에 따라 다르므로, **실행할 기기에서 직접 변환**해야 합니다.
 ```bash
 python3 conversion/onnx_to_trt.py \
   --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
