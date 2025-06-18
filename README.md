@@ -78,13 +78,6 @@ LSeg_Image_Encoder_TensorRT/
 │        │     # 예시 TRT 엔진
 │        ├── lseg_img_enc_vit_ade20k__fp16_sparse_ws512MiB.trt 
 │
-├── conversion/
-│   ├── model_to_onnx.py   # PyTorch → ONNX 변환 스크립트
-│   ├── onnx_to_trt.py     # ONNX → TensorRT 변환 스크립트
-│   └── onnx_to_trt.sh     # 쉘 래퍼 스크립트
-│
-├── inferenceTimeTester.py # 추론 및 벤치마크 메인 스크립트 (루트 폴더)
-│
 ├── modules/               # LSeg 모델 관련 소스
 │   ├── lseg_module.py     # LSegModule: 이미지 인코더 + 헤드 래핑
 │   ├── lseg_full.py       # LSegFull: 백본과 헤드 포함 전체 네트워크
@@ -92,10 +85,21 @@ LSeg_Image_Encoder_TensorRT/
 │   │   ├── lseg_blocks.py  # RefineNet 블록과 skip-connection 처리
 │   │   ├── lseg_net.py     # 네트워크 assemble 유틸리티
 │   │   └── lseg_vit.py     # CLIP ViT 레이어 분할 및 feature 추출
-├── build/                 # C++ 빌드 결과 (trt_cpp_infer_time_tester)
-│   └── trt_cpp_infer_time_tester # C++ TensorRT 벤치마크 실행 파일
+│
+├── conversion/
+│   ├── model_to_onnx.py   # PyTorch → ONNX 변환 스크립트
+│   ├── onnx_to_trt.py     # ONNX → TensorRT 변환 스크립트
+│   └── onnx_to_trt.sh     # 쉘 래퍼 스크립트
+│
+├── CPP_Project/
+│   └── Inference_Time_Tester/      # C++ 벤치마크 프로젝트
+│       ├── CMakeLists.txt          # CMake 설정
+│       ├── main.cpp                # 벤치마크 메인 코드
+│       └── build/                  # 빌드 결과물 (trt_cpp_infer_time_tester 실행파일)
+│
+├── inferenceTimeTester.py # 추론 및 벤치마크 메인 스크립트 (루트 폴더)
+│
 ├── requirements.txt       # Python 패키지 목록
-├── CMakeLists.txt         # C++ 프로젝트 설정
 └── README.md              # 본 파일
 ```
 
