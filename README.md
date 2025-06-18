@@ -1,6 +1,6 @@
 # LSeg Image Encoder ONNX & TensorRT
 
-*아직 작업중입니다! 완료되지 않았습니다!!!*
+# *아직 작업중입니다! 완료되지 않았습니다!!!*
 
 본 프로젝트는 **LSeg 모델의 이미지 인코딩 경로**(백본, 중간 feature 추출, projection layer)를 분리하여 **ONNX** 및 **TensorRT** 모델로 변환하고, 각 단계별 **Inference 성능 비교**를 지원합니다.
 
@@ -61,12 +61,13 @@ gdown 'https://drive.google.com/uc?id=1Nplkc_JsHIS55d--K2vonOOC3HrppzYy'
 LSeg_Image_Encoder_TensorRT/
 ├── models/
 │   ├── weights/
-│   │   ├── demo_e200.ckpt                                   # 예시: ViT-L/16 CLIP 모델 체크포인트
-│   │   └── fss_l16.ckpt                                     # 예시: FSS 기반 ViT-L/16 모델 체크포인트
+│   │   ├── demo_e200.ckpt # 예시: ViT-L/16 CLIP 모델 체크포인트
+│   │   └── fss_l16.ckpt   # 예시: FSS 기반 ViT-L/16 모델 체크포인트
 │   ├── onnx_engines/
-│   │   ├── lseg_img_enc_vit_ade20k.onnx                    # 예시 ONNX 모델
+│   │   ├── lseg_img_enc_vit_ade20k.onnx  # 예시 ONNX 모델
 │   └── trt_engines/
-│       ├── lseg_img_enc_vit_ade20k__fp16_sparse_ws512MiB.trt # 예시 TRT 엔진
+│        │     # 예시 TRT 엔진
+│        ├── lseg_img_enc_vit_ade20k__fp16_sparse_ws512MiB.trt 
 │
 ├── conversion/
 │   ├── model_to_onnx.py   # PyTorch → ONNX 변환 스크립트
@@ -76,24 +77,14 @@ LSeg_Image_Encoder_TensorRT/
 ├── inferenceTimeTester.py # 추론 및 벤치마크 메인 스크립트 (루트 폴더)
 │
 ├── modules/               # LSeg 모델 관련 소스
-│   ├── lseg_module.py     # LSegModule: 전체 모델 래핑 (이미지 인코더 + 헤드)
-│   ├── lseg_full.py       # LSegFull: 완전 분할 네트워크 정의 (백본 + 헤드)
-│   ├── lseg_blocks.py     # Fusion 및 RefineNet 블록 정의
-│   ├── lseg_net.py        # LSegNet: 네트워크 assemble 유틸리티
-│   ├── lseg_vit.py        # CLIP ViT 백본 전처리 및 레이어 추출
-│   └── models/            # 내부 모델 서브모듈
-│       ├── lseg_blocks.py   # RefineNet 블록, skip-connection 처리
-│       ├── lseg_blocks_zs.py# 제로샷용 RefineNet 블록 구현
-│       ├── lseg_net.py      # 서브 네트워크 assemble 도우미
-│       ├── lseg_net_zs.py   # 제로샷용 네트워크 assemble
-│       ├── lseg_vit.py      # ViT 레이어 분할 및 feature 추출
-│       └── lseg_vit_zs.py   # 제로샷용 ViT 레이어 분할
-│
+│   ├── lseg_module.py     # LSegModule: 이미지 인코더 + 헤드 래핑
+│   ├── lseg_full.py       # LSegFull: 백본과 헤드 포함 전체 네트워크
+│   ├── models/            # 내부 서브모듈
+│   │   ├── lseg_blocks.py  # RefineNet 블록과 skip-connection 처리
+│   │   ├── lseg_net.py     # 네트워크 assemble 유틸리티
+│   │   └── lseg_vit.py     # CLIP ViT 레이어 분할 및 feature 추출
 ├── build/                 # C++ 빌드 결과 (trt_cpp_infer_time_tester)
 │   └── trt_cpp_infer_time_tester # C++ TensorRT 벤치마크 실행 파일
-│
-├── scripts/               # 다운/업로드 헬퍼 스크립트
-│
 ├── requirements.txt       # Python 패키지 목록
 ├── CMakeLists.txt         # C++ 프로젝트 설정
 └── README.md              # 본 파일
