@@ -101,11 +101,11 @@ if __name__ == "__main__":
     )
 
     # ─── Precision & sparsity ────────────────────────────────────
-    parser.add_argument("--fp16",     dest="fp16",    action="store_true",  default=False,
+    parser.add_argument("--fp16",     dest="fp16",    action="store_true",  default=True,
                         help="Enable FP16 precision")
     parser.add_argument("--no-fp16",  dest="fp16",    action="store_false",
                         help="Disable FP16 precision")
-    parser.add_argument("--sparse",   dest="sparse",  action="store_true",  default=False,
+    parser.add_argument("--sparse",   dest="sparse",  action="store_true",  default=True,
                         help="Enable sparse weights tactics")
     parser.add_argument("--no-sparse",dest="sparse",  action="store_false",
                         help="Disable sparse weights tactics")
@@ -122,25 +122,28 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # ─── 프로젝트 루트 & 모델 폴더 경로 ────────────────────────
+    script_dir   = os.path.dirname(__file__)
+    project_dir  = os.path.abspath(os.path.join(script_dir, os.pardir))
+    trt_dir      = os.path.join(project_dir, "models", "trt_engines")
+    os.makedirs(trt_dir, exist_ok=True)
+
     # 1) onnx 파일명(확장자 제외) 추출
-    base = os.path.splitext(os.path.basename(args.onnx))[0]
+    base   = os.path.splitext(os.path.basename(args.onnx))[0]
 
-    # 2) 켜진 옵션들만 모아서 리스트로
-    flags = []
-    flags.append("fp16" if args.fp16 else "fp32")
-    if args.sparse:            flags.append("sparse")
-    if args.disable_timing_cache: flags.append("noTC")
-    if args.gpu_fallback:      flags.append("gpuFB")
-    if args.debug:             flags.append("dbg")
-    # workspace 크기도 이름에 추가하고 싶으면:
-    flags.append(f"ws{args.workspace>>20}MiB")
-
-    # 3) 합쳐서 새로운 엔진 경로 생성
-    suffix = "_".join(flags)
+    # 2) 빌드 옵션 태그 생성
+    flags = [
+        "fp16" if args.fp16 else "fp32",
+        "sparse"        if args.sparse else None,
+        "noTC"          if args.disable_timing_cache else None,
+        "gpuFB"         if args.gpu_fallback else None,
+        "dbg"           if args.debug else None,
+        f"ws{args.workspace>>20}MiB"
+    ]
+    flags = [f for f in flags if f]
+    suffix          = "_".join(flags)
     engine_basename = f"{base}__{suffix}.trt"
-    engine_dir      = os.path.dirname(args.onnx)
-    engine_path     = os.path.join(engine_dir, engine_basename)
-    os.makedirs(engine_dir, exist_ok=True)
+    engine_path     = os.path.join(trt_dir, engine_basename)
 
     # 4) 빌드 호출
     build_dynamic_engine(

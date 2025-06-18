@@ -1,26 +1,25 @@
 # LSeg Image Encoder ONNX & TensorRT
 
-이 프로젝트는 **LSeg 모델의 이미지 인코딩 경로(백본, 중간 feature 추출, projection layer)**를 분리하여 ONNX 및 TensorRT 모델로 변환하는 코드입니다.  
-**PyTorch → ONNX → TensorRT 변환 및 Inference 성능 비교**를 지원합니다.
+*아직 작업중입니다! 완료되지 않았습니다!!!*
+
+본 프로젝트는 **LSeg 모델의 이미지 인코딩 경로**(백본, 중간 feature 추출, projection layer)를 분리하여 **ONNX** 및 **TensorRT** 모델로 변환하고, 각 단계별 **Inference 성능 비교**를 지원합니다.
 
 ---
 
-## **Installation**
+## Installation
 
-### **1. Python 환경**
-- Python 3.8 이상 권장
+### 1. Python 환경
 
-### **2. 필수 라이브러리 설치**
-아래 명령어를 사용하여 필요한 라이브러리를 설치하세요:
+* Python 3.8 이상 권장
+* 가상환경(venv, conda 등) 사용을 권장합니다.
+
+### 2. 필수 라이브러리 설치
 
 ```bash
 pip install -r requirements.txt
 ```
 
-필요에 따라 가상환경(venv, conda 등)을 사용하세요.
-**3. APT 패키지 설치 (필요한 경우)** 
-일부 패키지는 시스템 라이브러리가 필요하므로 아래 명령어를 실행하세요:
-
+### 3. 시스템 패키지 설치 (Ubuntu 예시)
 
 ```bash
 sudo apt update && sudo apt install -y \
@@ -28,142 +27,169 @@ sudo apt update && sudo apt install -y \
     libopencv-dev \
     libprotobuf-dev protobuf-compiler \
     libtinfo5 \
-    libopenmpi-dev
+    libopenmpi-dev \
+    cuda-toolkit-##  # CUDA 설치 필요시 버전에 맞춰
 ```
-**4. 모델 다운로드** 대용량 모델 파일은 [Hugging Face](https://huggingface.co/joonyeol99/LSeg_ViT-to-ONNX) 에서 다운로드할 수 있습니다.
-
-```bash
-wget https://huggingface.co/joonyeol99/LSeg_ViT-to-ONNX/resolve/main/lseg_image_encoder.onnx
-wget https://huggingface.co/joonyeol99/LSeg_ViT-to-ONNX/resolve/main/demo_e200.ckpt
-```
-또는 `download_from_hf.py` 스크립트를 실행하면 자동으로 다운로드됩니다:
-
-```bash
-python3 models/srcipts/download_from_hf.py
-```
-
 
 ---
 
-**Project Structure** 
+## 모델 다운로드
+
+**Weight 파일**은 LSeg 공식 저장소에서 가져오세요.
+LSeg 공식 저장소 : **[https://github.com/isl-org/lang-seg](https://github.com/isl-org/lang-seg)**
 
 ```bash
-.
-├── models/                   # 변환된 모델 및 체크포인트 저장 폴더
-│   ├── demo_e200.ckpt        # LSeg 원본 체크포인트
-│   ├── lseg_image_encoder.onnx # 변환된 ONNX 모델
-│   ├── lseg_image_encoder.trt  # 변환된 TensorRT 모델
-│
-├── conversion/               # 모델 변환 관련 코드
-│   ├── model_to_onnx.py      # PyTorch → ONNX 변환 스크립트
-│   ├── onnx_to_trt.py        # ONNX → TensorRT 변환 스크립트
-│
-├── inference/                # 추론 및 성능 비교 코드
-│   ├── inferenceTimeTester.py # PyTorch, ONNX, TensorRT Inference 성능 비교
-│
-├── lseg/                     # LSeg 관련 모듈
-│   ├── __init__.py
-│   ├── image_encoder.py      # LSeg 이미지 인코더 (PyTorch 모델 래핑)
-│   ├── lseg_blocks.py
-│   ├── lseg_module.py
-│   ├── lseg_net.py
-│   ├── lseg_vit.py
-│
-├── scripts/                  # 데이터 다운로드 및 업로드 스크립트
-│   ├── download_from_hf.py
-│   ├── upload_to_hf.py
-│
-├── requirements.txt          # 필요한 Python 패키지 목록
-└── README.md                 # 프로젝트 설명 파일
+# 메인 ViT-L/16 모델 (demo_e200.ckpt)
+pip install gdown
+# demo_e200.ckpt 다운로드
+gdown 'https://drive.google.com/uc?id=1FTuHY1xPUkM-5gaDtMfgCl3D0gR89WV7'
+
+# FSS 데이터셋 기반 모델 예시
+# fss_rn101.ckpt (ResNet101)
+gdown 'https://drive.google.com/uc?id=1UIj49Wp1mAopPub5M6O4WW-Z79VB1bhw'
+# fss_l16.ckpt (ViT-L/16)
+gdown 'https://drive.google.com/uc?id=1Nplkc_JsHIS55d--K2vonOOC3HrppzYy'
 ```
 
+다운로드한 체크포인트는 `models/weights/` 아래에 저장하세요.
 
 ---
 
-**Usage** **1. ONNX 모델 변환 (Export)** 아래 명령어를 실행하면 `demo_e200.ckpt` 체크포인트를 기반으로 ONNX 모델을 생성합니다:
+## Project Structure
 
-```bash
-python3 conversion/model_to_onnx.py
+```
+LSeg_Image_Encoder_TensorRT/
+├── models/
+│   ├── weights/
+│   │   ├── demo_e200.ckpt                                   # 예시: ViT-L/16 CLIP 모델 체크포인트
+│   │   └── fss_l16.ckpt                                     # 예시: FSS 기반 ViT-L/16 모델 체크포인트
+│   ├── onnx_engines/
+│   │   ├── lseg_img_enc_vit_ade20k.onnx                    # 예시 ONNX 모델
+│   └── trt_engines/
+│       ├── lseg_img_enc_vit_ade20k__fp16_sparse_ws512MiB.trt # 예시 TRT 엔진
+│
+├── conversion/
+│   ├── model_to_onnx.py   # PyTorch → ONNX 변환 스크립트
+│   ├── onnx_to_trt.py     # ONNX → TensorRT 변환 스크립트
+│   └── onnx_to_trt.sh     # 쉘 래퍼 스크립트
+│
+├── inferenceTimeTester.py # 추론 및 벤치마크 메인 스크립트 (루트 폴더)
+│
+├── modules/               # LSeg 모델 관련 소스
+│   ├── lseg_module.py     # LSegModule: 전체 모델 래핑 (이미지 인코더 + 헤드)
+│   ├── lseg_full.py       # LSegFull: 완전 분할 네트워크 정의 (백본 + 헤드)
+│   ├── lseg_blocks.py     # Fusion 및 RefineNet 블록 정의
+│   ├── lseg_net.py        # LSegNet: 네트워크 assemble 유틸리티
+│   ├── lseg_vit.py        # CLIP ViT 백본 전처리 및 레이어 추출
+│   └── models/            # 내부 모델 서브모듈
+│       ├── lseg_blocks.py   # RefineNet 블록, skip-connection 처리
+│       ├── lseg_blocks_zs.py# 제로샷용 RefineNet 블록 구현
+│       ├── lseg_net.py      # 서브 네트워크 assemble 도우미
+│       ├── lseg_net_zs.py   # 제로샷용 네트워크 assemble
+│       ├── lseg_vit.py      # ViT 레이어 분할 및 feature 추출
+│       └── lseg_vit_zs.py   # 제로샷용 ViT 레이어 분할
+│
+├── build/                 # C++ 빌드 결과 (trt_cpp_infer_time_tester)
+│   └── trt_cpp_infer_time_tester # C++ TensorRT 벤치마크 실행 파일
+│
+├── scripts/               # 다운/업로드 헬퍼 스크립트
+│
+├── requirements.txt       # Python 패키지 목록
+├── CMakeLists.txt         # C++ 프로젝트 설정
+└── README.md              # 본 파일
 ```
 
-이 스크립트는 다음 과정을 수행합니다:
- 
-- `demo_e200.ckpt`에서 가중치를 로드하여 모델을 복원합니다.
- 
-- 모델의 이미지 인코딩 경로(백본 → 중간 feature 추출 → projection layer)를 분리하여 `LSegImageEncoder` 모듈을 생성합니다.
- 
-- 입력 크기 `(1, 3, 480, 480)`의 더미 텐서를 사용하여 `lseg_image_encoder.onnx` 파일로 변환합니다.
-**주의:**  `lseg_image_encoder.onnx`는 이미 Hugging Face에서 제공되므로, 직접 실행하지 않고 다운로드하여 사용할 수도 있습니다.**2. TensorRT 변환** 
-ONNX 모델을 TensorRT 엔진으로 변환하려면:
+## Usage
 
+### 1. ONNX 모델 변환
 
 ```bash
-python3 conversion/onnx_to_trt.py
+python3 conversion/model_to_onnx.py \
+  --weights models/weights/demo_e200.ckpt \
 ```
-**주의:**  TensorRT 변환은 GPU 및 환경에 따라 다르므로, 실행할 기기에서 직접 변환해야 합니다.
+
+* `--weights`: 체크포인트 경로
+
+### 2. TensorRT 엔진 변환
+
+```bash
+python3 conversion/onnx_to_trt.py \
+  --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
+  --workspace 1073741824 \
+  --fp16 \
+  --sparse \
+  --disable-timing-cache \
+  --gpu-fallback \
+  --debug 
+```
+
+#### TensorRT 옵션 설명
+
+| 옵션                         | 종류      | 기본값     | 설명                           |
+| -------------------------- | ------- | ------- | ---------------------------- |
+| `--onnx <PATH>`            | 필수    | —      | 입력 ONNX 파일 경로                |
+| `--workspace <BYTE>`       | integer | `1<<29` | 빌더 워크스페이스 메모리(바이트)           |
+| `--fp16` / `--no-fp16`     | flag    |  true   | FP16 연산 사용 여부                |
+| `--sparse` / `--no-sparse` | flag    |  true   | Sparse weights 전술 사용 여부      |
+| `--disable-timing-cache`   | flag    | false   | 타이밍 캐시 비활성화 (빌드 안정성 ↑, 속도 ↓) |
+| `--gpu-fallback`           | flag    | false   | INT8 모드에서 GPU 연산 폴백 허용       |
+| `--debug`                  | flag    | false   | 디버그 로그 활성화                   |
+
+**엔진 파일명 자동 생성 규칙**: `base__<옵션1>_<옵션2>_..._<wsXXMiB>.trt`
 
 ---
 
-**3. 추론 및 성능 비교** **자동 실행: PyTorch vs ONNX vs TensorRT Inference** 아래 명령어를 실행하면 **PyTorch, ONNX, TensorRT Inference 속도를 비교** 할 수 있습니다:
+### 3. Inference & Benchmark
+
+`inference/inferenceTimeTester.py` 를 실행하여 **PyTorch, ONNX, TensorRT** 속도를 비교합니다.
 
 ```bash
-python3 inferenceTimeTester.py
+python3 inference/inferenceTimeTester.py \
+  --weights models/weights/demo_e200.ckpt \
+  --iterations 500 \
+  --img_sizes 260 390 520 650 780 910 \
+  --trt_fp16 \
+  --trt_sparse \
+  --trt_no_tc \
+  --trt_gpu_fb \
+  --trt_debug \
+  --trt_workspace 1073741824
 ```
 
-이 스크립트는 다음 과정을 자동으로 수행합니다:
- 
-1. `demo_e200.ckpt` 체크포인트가 없으면 **자동 다운로드**
- 
-2. `lseg_image_encoder.onnx`가 없으면 **자동 변환**
- 
-3. `lseg_image_encoder.trt`가 없으면 **자동 변환**
- 
-4. **추론 속도 비교**  (PyTorch → ONNX → TensorRT)
-**추론 결과 예시** 
+* `--img_sizes`: 테스트할 입력 크기 목록
+* `--iterations`: 반복 횟수
+* `--trt_*`: TRT 빌드 옵션 (ONNX→TRT에 자동 반영)
 
-```less
-[INFO] PyTorch 모델 추론 (GPU) 시작...
-[RESULT] PyTorch Model Inference Time: 0.143024 sec (GPU)
+**스크립트 동작**:
 
-[INFO] ONNX 모델 추론 (GPU) 시작...
-[RESULT] ONNX Model Inference Time: 1.649300 sec (CPU)  # GPU 비활성화 시 느려짐
+1. ONNX 파일이 없으면 자동 생성
+2. TRT 엔진이 없으면 자동 생성
+3. PyTorch → ONNX → TRT 순으로 추론 벤치마크
 
-[INFO] TensorRT 모델 추론 시작...
-[RESULT] TensorRT Model Inference Time: 0.123930 sec
+**결과 예시**:
+
 ```
-🔥 **TensorRT가 가장 빠른 속도를 보임!** 
-→ **ONNX Runtime은 CUDA 설정이 필요하며, GPU에서 실행해야 빠름** 
+[RESULT] PyTorch Avg: 12.345 ms ± 0.123 ms
+[RESULT] ONNX   Avg: 10.567 ms ± 0.098 ms
+[RESULT] TRT    Avg:  5.432 ms ± 0.045 ms
+```
 
 ---
 
-**Additional Notes** **1. ONNX Opset Version**  
-- `model_to_onnx.py`는 `opset_version=14`을 사용하여 최신 연산을 지원합니다.
-**2. 입력 크기**  
-- 현재 ONNX 모델은 `480×480` 입력 크기를 기준으로 변환됩니다.
- 
-- 동적 입력 크기를 지원하려면 `torch.onnx.export()` 설정을 수정해야 합니다.
-**3. GPU 설정 확인**  
-- PyTorch, ONNX Runtime, TensorRT가 **모두 GPU에서 실행되는지 확인하는 것이 중요** 합니다.
- 
-- `onnxruntime-gpu`가 필요할 경우 아래 명령어로 설치하세요:
+## Additional Notes
 
-
-```bash
-pip3 install onnxruntime-gpu
-```
- 
-- `CUDAExecutionProvider`가 활성화되었는지 확인하려면:
-
+* **ONNX opset\_version=14** 사용
+* 동적 입력 크기 지원: `torch.onnx.export(... dynamic_axes=...)` 설정 참조
+* GPU 벤치마크를 위해 `onnxruntime-gpu` 필요: `pip install onnxruntime-gpu`
+* CUDAExecutionProvider 확인:
 
 ```python
 import onnxruntime as ort
 print(ort.get_available_providers())
 ```
 
-
 ---
 
-**License** 
-(사용하고 있는 라이선스를 여기에 기재하세요. 예: MIT License)
+## License
 
-
+사용 중인 라이선스를 명시하세요. 예: MIT License

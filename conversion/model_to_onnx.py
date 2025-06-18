@@ -9,11 +9,9 @@ from modules.lseg_module import LSegModule
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--img_size", type=int, default=480, help="Input image size")
-    parser.add_argument("--weights", type=str, default="modules/demo_e200.ckpt", help="Path to checkpoint")
+    parser.add_argument("--weights", type=str, default="models/weights/demo_e200.ckpt", help="Path to checkpoint")
     args = parser.parse_args()
-    # dynamic H×W 지원하더라도 내부 crop_size 용으로 한 변 크기를 만들어 둡니다.
-    args.crop_size = args.img_size
+
     # ✅ 디바이스 설정 (GPU 사용 가능하면 GPU, 아니면 CPU)
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     #print(f"Using device: {device}")
@@ -35,7 +33,7 @@ if __name__ == "__main__":
         backbone="clip_vitl16_384",
         aux=False,
         num_features=256,
-        crop_size=args.crop_size,
+        crop_size=480,
         readout="project",
         aux_weight=0,
         se_loss=False,
@@ -58,8 +56,8 @@ if __name__ == "__main__":
     model.eval()
 
     #dummy_input = torch.randn(1, 3, args.img_size, args.img_size, device=device)
-    dummy_input = torch.randn(1, 3, args.img_size, args.img_size)
-    onnx_filename = f"output/models/lseg_img_enc_vit_{tag}.onnx"
+    dummy_input = torch.randn(1, 3, 480, 480)
+    onnx_filename = f"models/onnx_engines/lseg_img_enc_vit_{tag}.onnx"
     
     torch.onnx.export(
     model,

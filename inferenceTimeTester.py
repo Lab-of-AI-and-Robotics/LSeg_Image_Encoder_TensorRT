@@ -145,27 +145,97 @@ if __name__ == "__main__":
                         default=[260,390,520,650,780,910],
                         help="List of raw input image sizes (H=W) to test")
     parser.add_argument("--weights", type=str,
-                        default="modules/demo_e200.ckpt")
+                        default="models/weights/demo_e200.ckpt")
     parser.add_argument("--iterations", type=int, default=1000)
-    parser.add_argument("--dynamic_trt", type=str,
-                        default="output/models/lseg_img_enc_vit_ade20k.trt",
-                        help="Path to the single dynamic TRT engine")
     parser.add_argument("--resize", type=int, default=None,
                         help="If set, resize every image to this square size before inference")
+    parser.add_argument("--trt_workspace", type=int, default=1<<29)
+    parser.add_argument("--trt_fp16",     action="store_true", default=True)
+    parser.add_argument("--trt_sparse",   action="store_true", default=True)
+    parser.add_argument("--trt_no_tc",    action="store_true", default=False)
+    parser.add_argument("--trt_gpu_fb",   action="store_true", default=False)
+    parser.add_argument("--trt_debug",    action="store_true", default=False)
     args = parser.parse_args()
 
     checkpoint_path = args.weights
+    # — weights 자동 다운로드 —
+    if not os.path.exists(checkpoint_path):
+        print(f"[INFO] checkpoint not found.")
+    
     ck = os.path.basename(checkpoint_path)
     tag = "ade20k" if "ade20k" in ck or "demo" in ck else "fss" if "fss" in ck else "custom"
 
-    # ONNX / TRT 파일 생성 (없으면 자동)
-    onnx_path = f"output/models/lseg_img_enc_vit_{tag}.onnx"
-    trt_path  = args.dynamic_trt
-    os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
-    if not os.path.exists(onnx_path):
-        run_subprocess(["python3", "conversion/model_to_onnx.py", "--img_size", str(args.img_sizes[0]), "--weights", checkpoint_path])
+    # ─── ONNX / TRT 파일 경로 세팅 ────────────────────────────────
+    # ─── 스크립트 기준의 models 폴더 ───────────────────────────
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    onnx_dir   = os.path.join(script_dir, "models", "onnx_engines")
+    trt_dir    = os.path.join(script_dir, "models", "trt_engines")
+    os.makedirs(onnx_dir, exist_ok=True)
+    os.makedirs(trt_dir,  exist_ok=True)
+
+    # 1) ONNX 파일
+    onnx_filename = f"lseg_img_enc_vit_{tag}.onnx"
+    onnx_path     = os.path.join(onnx_dir, onnx_filename)
+
+    # 2) TRT 엔진 파일명 (base + __ + 옵션 태그)
+    base          = os.path.splitext(onnx_filename)[0]
+    flags = [
+        "fp16" if args.trt_fp16 else "fp32",
+        "sparse"        if args.trt_sparse else None,
+        "noTC"          if args.trt_no_tc else None,
+        "gpuFB"         if args.trt_gpu_fb else None,
+        "dbg"           if args.trt_debug else None,
+        f"ws{args.trt_workspace>>20}MiB"
+    ]
+    flags = [f for f in flags if f]
+    engine_basename = f"{base}__{'_'.join(flags)}.trt"
+    trt_path        = os.path.join(trt_dir, engine_basename)
+
+    # ─── ONNX / TRT 자동 생성 ─────────────────────────────────────
+    if not os.path.exists(onnx_path):   
+        print("No ONNX Engine Exists. Automatically Building It...")
+        run_subprocess([
+            "python3", "conversion/model_to_onnx.py",
+            "--weights", checkpoint_path,
+        ])
+
     if not os.path.exists(trt_path):
-        run_subprocess(["python3", "conversion/onnx_to_trt_dynamic.py", "--onnx", onnx_path, "--engine", trt_path])
+        cmd = [
+            "python3", "conversion/onnx_to_trt.py",
+            "--onnx", onnx_path,
+            "--workspace", str(args.trt_workspace),
+            "--fp16"     if args.trt_fp16 else "--no-fp16",
+            "--sparse"   if args.trt_sparse else "--no-sparse",
+            "--disable-timing-cache" if args.trt_no_tc else "",
+            "--gpu-fallback"         if args.trt_gpu_fb else "",
+            "--debug"               if args.trt_debug else "",
+        ]
+        cmd = [c for c in cmd if c]
+        run_subprocess(cmd)
+
+    print("[INFO] PyTorch 모델 로드 중...")
+    model = LSegModule.load_from_checkpoint(
+        checkpoint_path=checkpoint_path,
+        backbone="clip_vitl16_384",
+        aux=False,
+        num_features=256,
+        crop_size=max(args.img_sizes),
+        readout="project",
+        aux_weight=0,
+        se_loss=False,
+        se_weight=0,
+        ignore_index=255,
+        dropout=0.0,
+        scale_inv=False,
+        augment=False,
+        no_batchnorm=False,
+        widehead=True,
+        widehead_hr=False,
+        map_location=device,
+        arch_option=0,
+        block_depth=0,
+        activation="lrelu"
+    ).net
 
     for img_size in args.img_sizes:
         print(f"\n\n[INFO] Testing image size: {img_size}\n\n")
@@ -177,38 +247,17 @@ if __name__ == "__main__":
             inp = torch.ones(1,3,args.resize,args.resize, dtype=torch.float32)
         else:
             inp = dummy_input
-        trt_py_avg, trt_py_std = measure_tensorrt_inference_time(trt_path, inp, args.iterations, dynamic=True)
-        print("[INFO] PyTorch 모델 로드 중...")
-        model = LSegModule.load_from_checkpoint(
-            checkpoint_path=checkpoint_path,
-            backbone="clip_vitl16_384",
-            aux=False,
-            num_features=256,
-            crop_size=img_size,
-            readout="project",
-            aux_weight=0,
-            se_loss=False,
-            se_weight=0,
-            ignore_index=255,
-            dropout=0.0,
-            scale_inv=False,
-            augment=False,
-            no_batchnorm=False,
-            widehead=True,
-            widehead_hr=False,
-            map_location=device,
-            arch_option=0,
-            block_depth=0,
-            activation="lrelu"
-        ).net
+
 
 
         ################################################################################
         ###################################    Inference   #############################
         ################################################################################
+        trt_py_avg, trt_py_std = measure_tensorrt_inference_time(trt_path, inp, args.iterations, dynamic=True)
         pt_avg, pt_std = measure_pytorch_inference_time(model, dummy_input, args.iterations)
         # onnx_avg, onnx_std = measure_onnx_inference_time(onnx_path, inp, args.iterations)
-        # ▶ 이제 img_h, img_w 두 인자를 넘겨줍니다
+
+        # C++ TensorRT 실험 코드
         cpp_cmd = [
             "./build/trt_cpp_infer_time_tester",
             trt_path,
