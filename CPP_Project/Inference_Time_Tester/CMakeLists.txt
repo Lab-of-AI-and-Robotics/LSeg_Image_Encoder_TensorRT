@@ -14,7 +14,7 @@ include_directories(
     ${CUDA_INCLUDE_DIRS}
     /usr/local/include/opencv4
     /usr/local/tensorrt/include
-    ${PROJECT_SOURCE_DIR}/third_party/cnpy
+    ${CMAKE_SOURCE_DIR}/../third_party/cnpy
 )
 
 # 라이브러리 경로 설정
@@ -25,8 +25,10 @@ link_directories(
 )
 
 # cnpy 라이브러리 추가
-add_library(cnpy STATIC third_party/cnpy/cnpy.cpp)
-
+set(CNPY_PATH "${CMAKE_SOURCE_DIR}/../third_party/cnpy")
+add_library(cnpy STATIC
+    "${CNPY_PATH}/cnpy.cpp"
+)
 # 실행 파일 설정
 add_executable(trt_cpp_infer_time_tester main.cpp)
 

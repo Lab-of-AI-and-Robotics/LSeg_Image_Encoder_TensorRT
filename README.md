@@ -30,6 +30,15 @@ sudo apt update && sudo apt install -y \
     libopenmpi-dev \
     cuda-toolkit-##  # CUDA 설치 필요시 버전에 맞춰
 ```
+### 4. C++ 벤치마크 빌드
+Inference Time Test 용 C++ 프로그램 빌드
+```bash
+cd CPP_Project/Inference_Time_Tester
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+cd ../../../
+```
 
 ---
 
@@ -167,6 +176,55 @@ python3 inference/inferenceTimeTester.py \
 
 ---
 
+### 4. Demo Scripts
+
+### Visual_Demo/demo.sh
+
+이 스크립트는 **ONNX 모델**을 이용해 예시 이미지를 분할(segmentation)하고, 결과를 시각화합니다.
+
+```bash
+# 사용 예시 (루트에서 실행)
+python3 Visual_Demo/demo.py --image Visual_Demo/images/dog_grass.jpeg \
+                            --labels "dog, grass, other" \
+                            --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
+                            --size 384
+```
+
+* `--image`: 입력 이미지 경로
+* `--labels`: 콤마(,)로 구분된 라벨 목록 (예: "cat, sky, building")
+* `--onnx`: ONNX 모델 파일 경로
+* `--size`: 모델 입력 크기 (HxW)
+
+스크립트 내부에서는 `demo.py` 를 호출하며, 좌측에 원본 이미지, 우측에 segmentation 결과를 출력합니다.
+
+
+### Visual_Demo/demo\_wordFree.sh
+
+이 스크립트는 **Full CLIP Vocab 기반** 픽셀 단위 분류를 수행하고, **등장한 단어**를 콘솔에 출력하며 시각화합니다.
+
+```bash
+# 사용 예시 (루트에서 실행)
+python3 Visual_Demo/demo_wordFree.py --image Visual_Demo/images/dog_grass.jpeg \
+                                     --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
+                                     --size 384
+```
+
+* `--image`: 입력 이미지 경로
+* `--onnx`: ONNX 모델 파일 경로
+* `--size`: 모델 입력 크기 (HxW)
+
+스크립트 내부에서는 `demo_wordFree.py` 를 호출하여 이미지 내 픽셀마다 CLIP 전체 vocab 중 가장 유사도가 높은 토큰을 선택, 해당 단어들을 출력하고 결과를 시각화합니다.
+
+### Visual Results
+
+아래는 `Visual_demo/images/` 폴더에 저장된 예시 결과입니다:
+
+|                     Segmentation (`demo.py`)                     |                  Word-free (`demo_wordFree.py`)                  |      |
+| :--------------------------------------------------------------: | :--------------------------------------------------------------: | ---- |
+| ![Dog Grass Segmentation](Visual_Demo/images/Dog_grass_demo.png) | ![Dog Grass WordFree](Visual_Demo/images/Dog_grass_wordFree.png) |
+
+
+---
 ## Additional Notes
 
 * **ONNX opset\_version=14** 사용

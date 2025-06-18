@@ -1,3 +1,3 @@
-[submodule "third_party/cnpy"]
-	path = third_party/cnpy
+[submodule "CPP_Project/third_party/cnpy"]
+	path = CPP_Project/third_party/cnpy
 	url = https://github.com/rogersce/cnpy.git

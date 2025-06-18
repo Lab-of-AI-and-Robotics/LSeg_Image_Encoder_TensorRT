@@ -257,17 +257,32 @@ if __name__ == "__main__":
         pt_avg, pt_std = measure_pytorch_inference_time(model, dummy_input, args.iterations)
         # onnx_avg, onnx_std = measure_onnx_inference_time(onnx_path, inp, args.iterations)
 
-        # C++ TensorRT 실험 코드
+        # 1) C++ 실행파일 경로
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        build_dir  = os.path.join(script_dir, "CPP_Project", "Inference_Time_Tester", "build")
+        cpp_exe    = os.path.join(build_dir, "trt_cpp_infer_time_tester")
+
+        # 2) 실행파일이 없으면 자동 빌드
+        if not os.path.exists(cpp_exe):
+            print("[INFO] C++ benchmark executable not found, building now...")
+            os.makedirs(build_dir, exist_ok=True)
+            # cmake .. && make
+            subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
+            # nproc 변수는 쉘에서만 해석되니, 파이썬에서 직접 CPU 코어 수를 넘겨줍니다.
+            import multiprocessing
+            nproc = multiprocessing.cpu_count()
+            subprocess.run(["make", f"-j{nproc}"], cwd=build_dir, check=True)
+
+        # 3) 빌드된 실행파일 호출용 커맨드 (절대경로 사용)
         cpp_cmd = [
-            "./build/trt_cpp_infer_time_tester",
+            cpp_exe,
             trt_path,
             str(args.iterations),
             # resize 옵션이 있으면 그 값을, 없으면 원본 img_size 사용
             str(args.resize or img_size),
             str(args.resize or img_size)
         ]
-        print(f"[INFO] Running C++ TensorRT benchmark: {' '.join(cpp_cmd)}")
-        # → stdout을 캡처해 변수에 담으면서도 터미널에 그대로 흘려보내기
+        print(f"[INFO] Running C++ TensorRT benchmark: {cpp_exe} {trt_path} {args.iterations} ...")
         cpp_proc = subprocess.run(
             cpp_cmd,
             stdout=subprocess.PIPE,
