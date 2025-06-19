@@ -1,322 +1,267 @@
-import os, re
-import torch
-import onnxruntime as ort
+import os, glob, subprocess, torch, time, re
 import tensorrt as trt
 import numpy as np
-import time
+import pandas as pd
+from tqdm import tqdm
 import pycuda.driver as cuda
 import pycuda.autoinit
-import subprocess
 import argparse
-from tqdm import tqdm
-from modules.lseg_module import LSegModule
-import pandas as pd
-import torch.nn.functional as F
 
-results = []
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Lightning modules
+from modules.lseg_module import LSegModule      # ViT
+from modules.lseg_module_zs import LSegModuleZS  # ResNet-ZS
 
-def run_subprocess(command):
-    try:
-        print(f"[INFO] 실행 중: {' '.join(command)}")
-        subprocess.run(command, check=True)
-        print(f"[INFO] 실행 완료: {' '.join(command)}")
-    except subprocess.CalledProcessError:
-        print(f"[ERROR] 실행 중 오류 발생: {' '.join(command)}")
-        exit(1)
+torch.backends.cudnn.benchmark = True
 
+# Utility: run a shell command
+def run_subprocess(cmd, cwd=None):
+    print(f"[CMD] {' '.join(cmd)}")
+    subprocess.run(cmd, check=True, cwd=cwd)
 
-def measure_pytorch_inference_time(model, input_tensor, iterations=100):
-    print("[INFO] PyTorch 모델 추론 (GPU) 시작...")
-    model.to(device)
-    input_tensor = input_tensor.to(device)
-
-    # ▶▶ single-run debug: sum/mean 찍기
-    with torch.no_grad():
-        out = model(input_tensor)
-    out_np = out.cpu().numpy()
-    print(f"[DEBUG] PyTorch single-run output sum={out_np.sum():.4f}, mean={out_np.mean():.4f}")
-
+# Measure PyTorch GPU inference
+def measure_pytorch_inference_time(net, inp, iterations=100):
+    device = torch.device('cuda')
+    net.to(device).eval()
+    inp = inp.to(device)
+    with torch.no_grad(): net(inp)
+    for _ in tqdm(range(10), desc="Warm-up PyTorch"): net(inp)
     times = []
-    with torch.no_grad():
-        for _ in tqdm(range(10), desc="Warm-up PyTorch"):
-            _ = model(input_tensor)
-        for _ in tqdm(range(iterations), desc="PyTorch Inference"):
-            start = time.time()
-            _ = model(input_tensor)
-            torch.cuda.synchronize()
-            end = time.time()
-            times.append((end - start) * 1000)
-    avg, std = np.mean(times), np.std(times)
-    print(f"[RESULT] PyTorch Avg Inference Time: {avg:.3f} ms ± {std:.3f} ms")
-    model.to("cpu")
-    torch.cuda.empty_cache()
-    return avg, std
+    for _ in tqdm(range(iterations), desc="PyTorch Inference"):  
+        start = time.time(); _ = net(inp); torch.cuda.synchronize(); times.append((time.time()-start)*1000)
+    net.to('cpu'); torch.cuda.empty_cache()
+    return float(np.mean(times)), float(np.std(times))
 
-
-def measure_onnx_inference_time(onnx_path, input_tensor, iterations=100):
-    print("[INFO] ONNX 모델 추론 (GPU) 시작...")
-    if not os.path.exists(onnx_path):
-        print(f"[ERROR] ONNX 파일이 존재하지 않습니다: {onnx_path}")
-        return None, None
-    try:
-        session = ort.InferenceSession(onnx_path, providers=["CUDAExecutionProvider"])
-        print("[INFO] ONNX 모델 로드 완료")
-    except Exception as e:
-        print(f"[ERROR] ONNX 모델 로드 중 오류: {e}")
-        return None, None
-    input_name = session.get_inputs()[0].name
-    input_array = input_tensor.cpu().numpy().astype(np.float32)
-    for _ in range(10):
-        session.run(None, {input_name: input_array})
-    times = []
-    for _ in tqdm(range(iterations), desc="ONNX Inference"):
-        start = time.time()
-        session.run(None, {input_name: input_array})
-        end = time.time()
-        times.append((end - start) * 1000)
-    avg, std = np.mean(times), np.std(times)
-    print(f"[RESULT] ONNX Avg Inference Time: {avg:.3f} ms ± {std:.3f} ms")
-    return avg, std
-
-
-def measure_tensorrt_inference_time(trt_engine_path, input_tensor, iterations=100, dynamic=False):
-    print("[INFO] TensorRT (Python) 모델 추론 시작...")
+# Measure TensorRT Python inference
+def measure_tensorrt_inference_time(engine_path, inp, iterations=100, dynamic=True):
     TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
-    with open(trt_engine_path, "rb") as f:
-        runtime = trt.Runtime(TRT_LOGGER)
-        engine = runtime.deserialize_cuda_engine(f.read())
-    context = engine.create_execution_context()
-
-    # 바인딩 이름 조회
-    input_name = engine.get_tensor_name(0)
-    output_name = engine.get_tensor_name(1)
-
-    # dynamic 입력 크기 설정
-    if dynamic:
-        context.set_input_shape(input_name, tuple(input_tensor.shape))
-
-    # 실제 출력 텐서 shape 조회
-    out_dims = context.get_tensor_shape(output_name)
-    output_shape = tuple(out_dims)
-
-    # I/O 버퍼 할당 (실제 크기 기반)
-    host_input = input_tensor.cpu().numpy().astype(np.float32)
-    host_output = np.empty(output_shape, dtype=np.float32, order='C')
-    d_input = cuda.mem_alloc(host_input.nbytes)
-    d_output = cuda.mem_alloc(host_output.nbytes)
-
-    # 메모리 주소 등록
-    context.set_tensor_address(input_name,  int(d_input))
-    context.set_tensor_address(output_name, int(d_output))
-
+    with open(engine_path,'rb') as f:
+        rt = trt.Runtime(TRT_LOGGER); engine = rt.deserialize_cuda_engine(f.read())
+    ctx = engine.create_execution_context()
+    in_name, out_name = engine.get_tensor_name(0), engine.get_tensor_name(1)
+    if dynamic: ctx.set_input_shape(in_name, tuple(inp.shape))
+    out_shape = tuple(ctx.get_tensor_shape(out_name))
+    h_in = inp.cpu().numpy().astype(np.float32)
+    h_out = np.empty(out_shape, dtype=np.float32)
+    d_in = cuda.mem_alloc(h_in.nbytes); d_out = cuda.mem_alloc(h_out.nbytes)
+    ctx.set_tensor_address(in_name, int(d_in)); ctx.set_tensor_address(out_name, int(d_out))
     stream = cuda.Stream()
-
-    def do_infer():
-        cuda.memcpy_htod_async(d_input, host_input, stream)
-        context.execute_async_v3(stream.handle)
-        cuda.memcpy_dtoh_async(host_output, d_output, stream)
-        stream.synchronize()
-        return host_output
-
-    # Warm-up
-    for _ in tqdm(range(10), desc="Warm-up TRT"):
-        do_infer()
-    
-    # ▶▶▶ 여기서 디버그 한 번 ▶▶▶
-    debug_out = do_infer()
-    print(f"[DEBUG] TRT single-run output sum={debug_out.sum():.4f}, mean={debug_out.mean():.4f}")
-
-
-    # Timing
+    def infer():
+        cuda.memcpy_htod_async(d_in, h_in, stream)
+        ctx.execute_async_v3(stream.handle)
+        cuda.memcpy_dtoh_async(h_out, d_out, stream)
+        stream.synchronize(); return h_out
+    for _ in tqdm(range(10), desc="Warm-up TRT"): infer()
     times = []
-    for _ in tqdm(range(iterations), desc="TensorRT Inference"):
-        start = time.time()
-        _ = do_infer()
-        end = time.time()
-        times.append((end - start) * 1000)
-    avg, std = np.mean(times), np.std(times)
-    print(f"[RESULT] TensorRT Avg Inference Time: {avg:.3f} ms ± {std:.3f} ms")
+    for _ in tqdm(range(iterations), desc="TensorRT Inference"):  
+        start = time.time(); _ = infer(); times.append((time.time()-start)*1000)
+    return float(np.mean(times)), float(np.std(times))
+
+# Locate engine file helper
+def find_engine_file(trt_dir, base, suffix):
+    engine_name = f"{base}__{suffix}.trt"
+    path = os.path.join(trt_dir, engine_name)
+    if os.path.exists(path):
+        return path
+    # fallback glob
+    candidates = glob.glob(os.path.join(trt_dir, f"{base}__*.trt"))
+    return candidates[0] if candidates else None
+
+# Run C++ benchmark via main.cpp constructed executable
+def run_cpp_benchmark(engine_file, iterations, height, width):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    build_dir = os.path.join(script_dir, 'CPP_Project', 'Inference_Time_Tester', 'build')
+    exe = os.path.join(build_dir, 'trt_cpp_infer_time_tester')
+    # build if missing
+    if not os.path.exists(exe):
+        os.makedirs(build_dir, exist_ok=True)
+        run_subprocess(['cmake', '..'], cwd=build_dir)
+        cpus = os.cpu_count() or 1
+        run_subprocess(['make', f'-j{cpus}'], cwd=build_dir)
+    # execute
+    cmd = [exe, engine_file, str(iterations), str(height), str(width)]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True)
+    avg = std = None
+    for line in proc.stdout.splitlines():
+        m = re.search(r'Avg=([\d\.]+) ms \u00B1 ([\d\.]+) ms', line)
+        if m: avg, std = float(m.group(1)), float(m.group(2)); break
     return avg, std
 
-if __name__ == "__main__":
+# Main
+
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--img_sizes", nargs='+', type=int,
-                        default=[260,390,520,650,780,910],
-                        help="List of raw input image sizes (H=W) to test")
-    parser.add_argument("--weights", type=str,
-                        default="models/weights/demo_e200.ckpt")
-    parser.add_argument("--iterations", type=int, default=1000)
-    parser.add_argument("--resize", type=int, default=None,
-                        help="If set, resize every image to this square size before inference")
-    parser.add_argument("--trt_workspace", type=int, default=1<<29)
-    parser.add_argument("--trt_fp16",     action="store_true", default=True)
-    parser.add_argument("--trt_sparse",   action="store_true", default=True)
-    parser.add_argument("--trt_no_tc",    action="store_true", default=False)
-    parser.add_argument("--trt_gpu_fb",   action="store_true", default=False)
-    parser.add_argument("--trt_debug",    action="store_true", default=False)
+    parser.add_argument('--weights_dir', type=str, default='models/weights')
+    parser.add_argument('--img_sizes', nargs='+', type=int,
+                        default=[256,320,384,480,640,768,1024])
+    parser.add_argument('--iterations', type=int, default=1000)
+    parser.add_argument('--resize', type=int, default=None)
+    parser.add_argument('--trt_workspace', type=int, default=1<<30,
+                        help='Workspace in bytes (1<<30=1GiB)')
+    # TRT flags
+    parser.add_argument('--trt_fp16', dest='trt_fp16', action='store_true', default=True)
+    parser.add_argument('--no-trt_fp16', dest='trt_fp16', action='store_false')
+    parser.add_argument('--trt_sparse', dest='trt_sparse', action='store_true', default=True)
+    parser.add_argument('--no-trt_sparse', dest='trt_sparse', action='store_false')
+    parser.add_argument('--trt_no_tc', action='store_true', default=False)
+    parser.add_argument('--trt_gpu_fb', action='store_true', default=False)
+    parser.add_argument('--trt_debug', action='store_true', default=False)
+    parser.add_argument('--trt_cublas', action='store_true', default=True)
+    parser.add_argument('--no-trt_cublas', dest='trt_cublas', action='store_false')
+    parser.add_argument('--trt_cudnn', action='store_true', default=True)
+    parser.add_argument('--no-trt_cudnn', dest='trt_cudnn', action='store_false')
     args = parser.parse_args()
 
-    checkpoint_path = args.weights
-    # — weights 자동 다운로드 —
-    if not os.path.exists(checkpoint_path):
-        print(f"[INFO] checkpoint not found.")
-    
-    ck = os.path.basename(checkpoint_path)
-    tag = "ade20k" if "ade20k" in ck or "demo" in ck else "fss" if "fss" in ck else "custom"
+    records = []
+    backbone_list = ['ViT', 'Resnet']
 
-    # ─── ONNX / TRT 파일 경로 세팅 ────────────────────────────────
-    # ─── 스크립트 기준의 models 폴더 ───────────────────────────
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    onnx_dir   = os.path.join(script_dir, "models", "onnx_engines")
-    trt_dir    = os.path.join(script_dir, "models", "trt_engines")
-    os.makedirs(onnx_dir, exist_ok=True)
-    os.makedirs(trt_dir,  exist_ok=True)
 
-    # 1) ONNX 파일
-    onnx_filename = f"lseg_img_enc_vit_{tag}.onnx"
-    onnx_path     = os.path.join(onnx_dir, onnx_filename)
+    # 1) 각 백본별 ckpt 개수 * size 개수로 전체 작업 수 계산
+    total_sizes = len(args.img_sizes)
+    tasks_per_backbone = []
+    for backbone in backbone_list:
+        ckpt_dir = os.path.join(args.weights_dir, backbone)
+        num_ckpts = len(glob.glob(os.path.join(ckpt_dir, '*.ckpt')))
+        tasks_per_backbone.append(num_ckpts * total_sizes)
+    total_tasks = sum(tasks_per_backbone)
+    global_step = 0
 
-    # 2) TRT 엔진 파일명 (base + __ + 옵션 태그)
-    base          = os.path.splitext(onnx_filename)[0]
-    flags = [
-        "fp16" if args.trt_fp16 else "fp32",
-        "sparse"        if args.trt_sparse else None,
-        "noTC"          if args.trt_no_tc else None,
-        "gpuFB"         if args.trt_gpu_fb else None,
-        "dbg"           if args.trt_debug else None,
-        f"ws{args.trt_workspace>>20}MiB"
-    ]
-    flags = [f for f in flags if f]
-    engine_basename = f"{base}__{'_'.join(flags)}.trt"
-    trt_path        = os.path.join(trt_dir, engine_basename)
+    for b_idx, backbone in enumerate(backbone_list, start=1):
+        ckpt_dir = os.path.join(args.weights_dir, backbone)
+        onnx_script = 'conversion/model_to_onnx.py' if backbone=='ViT' else 'conversion/model_to_onnx_zs.py'
+        ckpt_list = sorted(glob.glob(os.path.join(args.weights_dir, backbone, '*.ckpt')))
+        total_ckpts = len(ckpt_list)
 
-    # ─── ONNX / TRT 자동 생성 ─────────────────────────────────────
-    if not os.path.exists(onnx_path):   
-        print("No ONNX Engine Exists. Automatically Building It...")
-        run_subprocess([
-            "python3", "conversion/model_to_onnx.py",
-            "--weights", checkpoint_path,
-        ])
+        for c_idx, ckpt in enumerate(ckpt_list, start=1):
+            total_sizes = len(args.img_sizes)
 
-    if not os.path.exists(trt_path):
-        cmd = [
-            "python3", "conversion/onnx_to_trt.py",
-            "--onnx", onnx_path,
-            "--workspace", str(args.trt_workspace),
-            "--fp16"     if args.trt_fp16 else "--no-fp16",
-            "--sparse"   if args.trt_sparse else "--no-sparse",
-            "--disable-timing-cache" if args.trt_no_tc else "",
-            "--gpu-fallback"         if args.trt_gpu_fb else "",
-            "--debug"               if args.trt_debug else "",
+            tag = os.path.splitext(os.path.basename(ckpt))[0]
+
+            # ViT은 vit, Resnet-ZS는 rn101 키를 써야 onnx/model_to_onnx_zs.py 에서 저장한 이름과 일치합니다
+            backbone_key = 'vit' if backbone=='ViT' else 'rn101'
+            base = f"lseg_img_enc_{backbone_key}_{tag}"
+            
+            # ONNX
+            onnx_path = f"models/onnx_engines/{base}.onnx"
+            if os.path.exists(onnx_path):
+                print(f"✅ ONNX exists, skip: {onnx_path}")
+            else:
+                print(f"Building ONNX: {onnx_path}")
+                run_subprocess(['python3', onnx_script, '--weights', ckpt])
+            # TRT build
+            trt_dir = os.path.join('models','trt_engines'); os.makedirs(trt_dir, exist_ok=True)
+            flags = [
+                'fp16' if args.trt_fp16 else 'fp32',
+                'sparse' if args.trt_sparse else 'nosparse',
+                'noTC' if args.trt_no_tc else 'tc',
+                'gpuFB' if args.trt_gpu_fb else 'nogpuFB',
+                'dbg' if args.trt_debug else 'nodebug',
+                'cublas' if args.trt_cublas else 'nocublas',
+                'cudnn' if args.trt_cudnn else 'nocudnn',
+                f"ws{args.trt_workspace>>20}MiB"
+            ]
+            suffix = '_'.join(flags)
+            engine_file = find_engine_file(trt_dir, base, suffix)
+            if engine_file:
+                print(f"✅ TRT engine exists, skip: {engine_file}")
+            else:
+                print(f"Building TRT engine: {base}__{suffix}.trt")
+                cmd = ['python3', 'conversion/onnx_to_trt.py', '--onnx', onnx_path, '--workspace', str(args.trt_workspace)]
+                cmd += ['--fp16'] if args.trt_fp16 else ['--no-trt_fp16']
+                cmd += ['--sparse'] if args.trt_sparse else ['--no-trt_sparse']
+                if args.trt_no_tc: cmd.append('--disable-timing-cache')
+                if args.trt_gpu_fb: cmd.append('--gpu-fallback')
+                if args.trt_debug: cmd.append('--debug')
+                cmd.append('--use-cublas' if args.trt_cublas else '--no-cublas')
+                cmd.append('--use-cudnn' if args.trt_cudnn else '--no-cudnn')
+                run_subprocess(cmd)
+                engine_file = find_engine_file(trt_dir, base, suffix)
+            print(f"Using TRT engine: {engine_file}")
+            # Load model once
+            max_crop = max(args.img_sizes)
+            if backbone=='ViT':
+                module = LSegModule.load_from_checkpoint(
+                    checkpoint_path=ckpt, map_location='cpu', backbone='clip_vitl16_384', aux=False,
+                    num_features=256, crop_size=max_crop, readout='project', aux_weight=0,
+                    se_loss=False, se_weight=0, ignore_index=255, dropout=0.0,
+                    scale_inv=False, augment=False, no_batchnorm=False,
+                    widehead=True, widehead_hr=False, arch_option=0,
+                    block_depth=0, activation='lrelu'
+                ).net
+            else:
+                module = LSegModuleZS.load_from_checkpoint(
+                    checkpoint_path=ckpt, map_location='cpu', data_path='data/',
+                    dataset='ade20k', backbone='clip_resnet101', aux=False,
+                    num_features=256, aux_weight=0, se_loss=False, se_weight=0,
+                    base_lr=0, batch_size=1, max_epochs=0, ignore_index=255,
+                    dropout=0.0, scale_inv=False, augment=False,
+                    no_batchnorm=False, widehead=False, widehead_hr=False,
+                    arch_option=0, use_pretrained='True', strict=False,
+                    logpath='fewshot/logpath_4T/', fold=0, block_depth=0,
+                    nshot=1, finetune_mode=False, activation='lrelu'
+                ).net
+            # Benchmark per size
+            for s_idx, size in enumerate(args.img_sizes, start=1):
+                # 2) 글로벌 스텝 +1, percent 계산
+                global_step += 1
+                percent = global_step / total_tasks * 100
+
+                # 3) 진행 상황 출력
+                print(
+                    f"\n>> Progress: {global_step}/{total_tasks} "
+                    f"({percent:.1f}%)\n"
+                    f"   → Backbone = {backbone} "
+                    f"({b_idx}/{len(backbone_list)}) | "
+                    f"Checkpoint = {os.path.basename(ckpt)} "
+                    f"({c_idx}/{len(ckpt_list)}) | "
+                    f"Size = {size} ×  {size} "
+                    f"({s_idx}/{total_sizes})"
+                )
+
+                height, width = (args.resize, args.resize) if args.resize else (size, size)
+                inp = torch.ones(1,3,height,width)
+                pt_avg, pt_std = measure_pytorch_inference_time(module, inp, args.iterations)
+                trt_avg, trt_std = measure_tensorrt_inference_time(engine_file, inp, args.iterations, dynamic=True)
+                print("C++ Inference Benchmark is running...")
+                cpp_avg, cpp_std = run_cpp_benchmark(engine_file, args.iterations, height, width)
+                record = {
+                    'Backbone': backbone,
+                    'Checkpoint': os.path.basename(ckpt),
+                    'Size': size,
+                    'Crop Size': max_crop,
+                    'PyTorch Avg(ms)': pt_avg, 'PyTorch Std(ms)': pt_std,
+                    'TRT Python Avg(ms)': trt_avg, 'TRT Python Std(ms)': trt_std,
+                    'TRT C++ Avg(ms)': cpp_avg, 'TRT C++ Std(ms)': cpp_std
+                }
+
+                # 리스트에 추가
+                records.append(record)
+
+                # 중간 결과 출력
+                print(
+                    f">> Appended Record – "
+                    f"Backbone = {record['Backbone']} | "
+                    f"Checkpoint = {record['Checkpoint']} | "
+                    f"Size = {record['Size']} ×  {record['Size']} | "
+                    f"PyTorch = {record['PyTorch Avg(ms)']:.1f} ±  {record['PyTorch Std(ms)']:.1f}ms | "
+                    f"TRT Py = {record['TRT Python Avg(ms)']:.1f} ±  {record['TRT Python Std(ms)']:.1f}ms | "
+                    f"TRT C++ = {record['TRT C++ Avg(ms)']:.1f} ±  {record['TRT C++ Std(ms)']:.1f}ms\n"
+                )
+
+    df = pd.DataFrame(records)
+    pivot = df.pivot_table(
+        index=['Backbone','Checkpoint','Size','Crop Size'],
+        values=[
+            'PyTorch Avg(ms)', 'PyTorch Std(ms)',
+            'TRT Python Avg(ms)', 'TRT Python Std(ms)',
+            'TRT C++ Avg(ms)', 'TRT C++ Std(ms)'
         ]
-        cmd = [c for c in cmd if c]
-        run_subprocess(cmd)
+    )
 
-    print("[INFO] PyTorch 모델 로드 중...")
-    model = LSegModule.load_from_checkpoint(
-        checkpoint_path=checkpoint_path,
-        backbone="clip_vitl16_384",
-        aux=False,
-        num_features=256,
-        crop_size=max(args.img_sizes),
-        readout="project",
-        aux_weight=0,
-        se_loss=False,
-        se_weight=0,
-        ignore_index=255,
-        dropout=0.0,
-        scale_inv=False,
-        augment=False,
-        no_batchnorm=False,
-        widehead=True,
-        widehead_hr=False,
-        map_location=device,
-        arch_option=0,
-        block_depth=0,
-        activation="lrelu"
-    ).net
-
-    for img_size in args.img_sizes:
-        print(f"\n\n[INFO] Testing image size: {img_size}\n\n")
-        # ▶ 1.0 으로 채운 입력 (모든 채널・픽셀이 1.0)
-        dummy_input = torch.ones(1,3,img_size,img_size, dtype=torch.float32)
-        # inp = F.interpolate(dummy_input, size=(args.resize,args.resize), mode='bilinear', align_corners=False) if args.resize else dummy_input
-        if args.resize:
-            # 정사각형 리사이즈 후에도 모두 1.0
-            inp = torch.ones(1,3,args.resize,args.resize, dtype=torch.float32)
-        else:
-            inp = dummy_input
-
-
-
-        ################################################################################
-        ###################################    Inference   #############################
-        ################################################################################
-        trt_py_avg, trt_py_std = measure_tensorrt_inference_time(trt_path, inp, args.iterations, dynamic=True)
-        pt_avg, pt_std = measure_pytorch_inference_time(model, dummy_input, args.iterations)
-        # onnx_avg, onnx_std = measure_onnx_inference_time(onnx_path, inp, args.iterations)
-
-        # 1) C++ 실행파일 경로
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        build_dir  = os.path.join(script_dir, "CPP_Project", "Inference_Time_Tester", "build")
-        cpp_exe    = os.path.join(build_dir, "trt_cpp_infer_time_tester")
-
-        # 2) 실행파일이 없으면 자동 빌드
-        if not os.path.exists(cpp_exe):
-            print("[INFO] C++ benchmark executable not found, building now...")
-            os.makedirs(build_dir, exist_ok=True)
-            # cmake .. && make
-            subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
-            # nproc 변수는 쉘에서만 해석되니, 파이썬에서 직접 CPU 코어 수를 넘겨줍니다.
-            import multiprocessing
-            nproc = multiprocessing.cpu_count()
-            subprocess.run(["make", f"-j{nproc}"], cwd=build_dir, check=True)
-
-        # 3) 빌드된 실행파일 호출용 커맨드 (절대경로 사용)
-        cpp_cmd = [
-            cpp_exe,
-            trt_path,
-            str(args.iterations),
-            # resize 옵션이 있으면 그 값을, 없으면 원본 img_size 사용
-            str(args.resize or img_size),
-            str(args.resize or img_size)
-        ]
-        print(f"[INFO] Running C++ TensorRT benchmark: {cpp_exe} {trt_path} {args.iterations} ...")
-        cpp_proc = subprocess.run(
-            cpp_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=True
-        )
-        # 1) 터미널에 찍기 (TensorRT 로그 줄은 건너뛰기)
-        for line in cpp_proc.stdout.splitlines():
-            if not line.startswith("[TensorRT]"):
-                print(line)
-
-        # 2) 파싱해서 table에 넣기
-        cpp_avg = cpp_std = None
-        for line in cpp_proc.stdout.splitlines():
-            m = re.search(r"Avg=([\d\.]+) ms ± ([\d\.]+) ms", line)
-            if m:
-                cpp_avg, cpp_std = map(float, m.groups())
-                break
-        if cpp_avg is None:
-            print("[WARN] C++ 결과를 파싱하지 못했습니다.")
-        print(f"[INFO] TRT C++ Avg: {cpp_avg:.3f} ms ± {cpp_std:.3f} ms")
-
-        results.append({
-            "Size": img_size,
-            "PyTorch (ms)": pt_avg,
-            "PyTorch ±": pt_std,
-            "TRT Python (ms)": trt_py_avg,
-            "TRT Python ±": trt_py_std,
-            "TRT C++ (ms)": cpp_avg,
-            "TRT C++ ±": cpp_std,
-        })
-    df = pd.DataFrame(results).set_index("Size")
     print("\n===== Inference Benchmark Summary =====")
-    print(df.to_string())
-    print("\n===== Inference Benchmark Summary =====")
-    print(df.to_markdown())
+    print(pivot.to_string())
+
+    print("\n===== Inference Benchmark Summary (Markdown) =====")
+    print(pivot.to_markdown())
+
+if __name__=='__main__':
+    main()

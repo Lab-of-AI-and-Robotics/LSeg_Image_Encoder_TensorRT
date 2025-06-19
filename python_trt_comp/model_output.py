@@ -12,7 +12,7 @@ print(f"Using device: {device}")
 parser = argparse.ArgumentParser()
 parser.add_argument("--image",  type=str,      required=True)
 parser.add_argument("--sizes",  type=int, nargs='+', required=True)
-parser.add_argument("--weights",type=str, default="models/weights/demo_e200.ckpt")
+parser.add_argument("--weights",type=str, default="models/weights/ViT/demo_e200.ckpt")
 args = parser.parse_args()
 
 os.makedirs("outputs", exist_ok=True)

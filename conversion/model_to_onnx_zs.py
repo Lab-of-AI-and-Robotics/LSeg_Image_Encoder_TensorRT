@@ -13,19 +13,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '--weights',
         type=str,
-        default='models/weights/fss_rn101.ckpt',
+        default='models/weights/Resnet/fss_rn101.ckpt',
         help='Path to checkpoint'
     )
     args = parser.parse_args()
 
     checkpoint_path = args.weights
-    checkpoint_filename = os.path.basename(checkpoint_path)
-    if 'ade20k' in checkpoint_filename or 'demo' in checkpoint_filename:
-        tag = 'ade20k'
-    elif 'fss' in checkpoint_filename:
-        tag = 'fss'
-    else:
-        tag = 'custom'
+    # 체크포인트 파일명 그대로 태그로 사용
+    tag = os.path.splitext(os.path.basename(checkpoint_path))[0]
 
     # 기본값 그대로 사용
     module = LSegModuleZS.load_from_checkpoint(

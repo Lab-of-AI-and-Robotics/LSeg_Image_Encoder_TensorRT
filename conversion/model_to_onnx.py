@@ -9,7 +9,7 @@ from modules.lseg_module import LSegModule
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--weights", type=str, default="models/weights/demo_e200.ckpt", help="Path to checkpoint")
+    parser.add_argument("--weights", type=str, default="models/weights/ViT/demo_e200.ckpt", help="Path to checkpoint")
     args = parser.parse_args()
 
     # ✅ 디바이스 설정 (GPU 사용 가능하면 GPU, 아니면 CPU)
@@ -20,13 +20,8 @@ if __name__ == "__main__":
     checkpoint_path = args.weights
 
     # ✅ 체크포인트 경로에서 태그 추출 (예: demo_e200.ckpt → ade20k, fss_l16.ckpt → fss)
-    checkpoint_filename = os.path.basename(checkpoint_path)
-    if "ade20k" in checkpoint_filename or "demo" in checkpoint_filename:
-        tag = "ade20k"
-    elif "fss" in checkpoint_filename:
-        tag = "fss"
-    else:
-        tag = "custom"
+    # 체크포인트 파일명 그대로 태그로 사용
+    tag = os.path.splitext(os.path.basename(checkpoint_path))[0]
 
     model = LSegModule.load_from_checkpoint(
         checkpoint_path=checkpoint_path,
