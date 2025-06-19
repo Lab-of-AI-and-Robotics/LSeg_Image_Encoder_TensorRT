@@ -12,6 +12,8 @@ def build_dynamic_engine(onnx_path,
                          gpu_fallback: bool,
                          debug_mode: bool,
                          use_sparse: bool,
+                         use_cublas: bool,
+                         use_cudnn: bool,
                          workspace_size: int):
     with trt.Builder(TRT_LOGGER) as builder, \
          builder.create_network(EXPLICIT_BATCH) as network, \
@@ -51,6 +53,15 @@ def build_dynamic_engine(onnx_path,
             workspace_size
         )
 
+        # Tactic sources 플래그 조립
+        tactic_mask = 0
+        if args.use_cublas:
+            tactic_mask |= 1 << int(trt.TacticSource.CUBLAS)
+        if args.use_cudnn:
+            tactic_mask |= 1 << int(trt.TacticSource.CUDNN)
+        config.set_tactic_sources(tactic_mask)
+
+
         # ── ONNX 파싱 ──────────────────────────────────────────────
         #
         # ① 외부-가중치(external data) 를 포함한 대형 ONNX는
@@ -68,9 +79,9 @@ def build_dynamic_engine(onnx_path,
         profile = builder.create_optimization_profile()
         profile.set_shape(
             input_tensor.name,
-            (1, 3, 260, 260),  # MIN
+            (1, 3, 256, 256),  # MIN
             (1, 3, 480, 480),  # OPT
-            (1, 3, 910, 910),  # MAX
+            (1, 3, 1024, 1024),  # MAX
         )
         config.add_optimization_profile(profile)
 
@@ -115,7 +126,17 @@ if __name__ == "__main__":
                         help="Disable timing cache")
     parser.add_argument("--gpu-fallback",           action="store_true", default=False,
                         help="Allow GPU fallback for INT8")
-
+    
+    # ─── Tactic Sources ───────────────────────────────────────────
+    parser.add_argument("--use-cublas",   dest="use_cublas",   action="store_true",  default=True,
+                    help="Enable cuBLAS tactics")
+    parser.add_argument("--no-cublas",    dest="use_cublas",   action="store_false",
+                        help="Disable cuBLAS tactics")
+    parser.add_argument("--use-cudnn",    dest="use_cudnn",    action="store_true",  default=True,
+                        help="Enable cuDNN tactics")
+    parser.add_argument("--no-cudnn",     dest="use_cudnn",    action="store_false",
+                        help="Disable cuDNN tactics")
+    
     # ─── Debug & profiling ───────────────────────────────────────
     parser.add_argument("--debug",               action="store_true", default=False,
                         help="Enable debug mode")
@@ -138,6 +159,8 @@ if __name__ == "__main__":
         "noTC"          if args.disable_timing_cache else None,
         "gpuFB"         if args.gpu_fallback else None,
         "dbg"           if args.debug else None,
+        "cublas" if args.use_cublas else None,
+        "cudnn" if args.use_cudnn else None,
         f"ws{args.workspace>>20}MiB"
     ]
     flags = [f for f in flags if f]
@@ -154,6 +177,8 @@ if __name__ == "__main__":
         gpu_fallback           = args.gpu_fallback,
         debug_mode             = args.debug,
         use_sparse             = args.sparse,
+        use_cublas           = args.use_cublas,
+        use_cudnn            = args.use_cudnn,
         workspace_size         = args.workspace
     )
 
