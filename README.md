@@ -40,6 +40,18 @@ make -j$(nproc)
 cd ../../../
 ```
 
+### 5. C++ Feature Extractor 빌드
+
+Feature Map 추출용 C++ 프로그램 빌드
+
+```bash
+cd CPP_Project/Feature_Extractor
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+cd ../../../
+```
+
 ---
 
 ## 모델 다운로드
@@ -68,6 +80,24 @@ gdown 'https://drive.google.com/uc?id=1Nplkc_JsHIS55d--K2vonOOC3HrppzYy'
 
 ```
 LSeg_Image_Encoder_TensorRT/
+├── CPP_Project/                      # C++ 프로그램 모음
+│   ├── Feature_Extractor/            # Feature 추출기 프로젝트
+│   │   ├── CMakeLists.txt            # CMake 설정
+│   │   └── main.cpp                  # Feature 추출기 메인 코드
+│   ├── Inference_Time_Tester/        # Inference 벤치마크 프로젝트
+│   │   ├── CMakeLists.txt            # CMake 설정
+│   │   └── main.cpp                  # 벤치마크 메인 코드
+│   └── third_party/                  # C++ 서드 파티
+│       └── cnpy/                     # CNpy submodule for numpy I/O
+├── Visual_Demo/                      # 데모 스크립트 및 결과
+│   ├── demo.sh                       # demo.sh 스크립트
+│   ├── demo.py                       # demo.py 호출 래퍼
+│   ├── demo_wordFree.sh              # demo_wordFree.sh 스크립트
+│   ├── demo_wordFree.py              # demo_wordFree.py 호출 래퍼
+│   └── images/                       # 시각화 결과 및 입력 이미지
+│       ├── Dog_grass_demo.png        # segmentation 결과 예시
+│       ├── Dog_grass_wordFree.png    # word-free 결과 예시
+│       └── dog_grass.jpeg            # 입력 이미지 예시
 ├── models/
 │   ├── weights/
 │   │   ├── demo_e200.ckpt # 예시: ViT-L/16 CLIP 모델 체크포인트
@@ -96,6 +126,12 @@ LSeg_Image_Encoder_TensorRT/
 │       ├── CMakeLists.txt          # CMake 설정
 │       ├── main.cpp                # 벤치마크 메인 코드
 │       └── build/                  # 빌드 결과물 (trt_cpp_infer_time_tester 실행파일)
+│
+├── python_trt_comp/                  # Python 기반 Feature 비교 스크립트
+│   ├── compare_features.py           # Feature map 비교 (Cosine/L2)
+│   ├── compare_inputs.py             # 입력 tensor 비교
+│   ├── model_output.py               # PyTorch Feature 추출 스크립트
+│   └── run_feature_comparison.sh     # 전체 파이프라인 실행 스크립트
 │
 ├── inferenceTimeTester.py # 추론 및 벤치마크 메인 스크립트 (루트 폴더)
 │
@@ -229,6 +265,21 @@ python3 Visual_Demo/demo_wordFree.py --image Visual_Demo/images/dog_grass.jpeg \
 
 
 ---
+
+### 5. Feature Comparison & Extraction
+
+전체 Feature 추출 및 비교 파이프라인 실행:
+
+```bash
+bash python_trt_comp/run_feature_comparison.sh
+```
+
+* `run_feature_comparison.sh`: `model_output.py`, C++ Feature Extractor, `compare_features.py` 순차 실행
+* 결과는 `outputs/` 폴더와 콘솔 로그로 확인합니다.
+
+---
+
+
 ## Additional Notes
 
 * **ONNX opset\_version=14** 사용
