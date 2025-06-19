@@ -277,6 +277,10 @@ bash python_trt_comp/run_feature_comparison.sh
 * `run_feature_comparison.sh`: `model_output.py`, C++ Feature Extractor, `compare_features.py` 순차 실행
 * 결과는 `outputs/` 폴더와 콘솔 로그로 확인합니다.
 
+### Visual Results
+
+아래는 `Visual_demo/images/` 폴더에 저장된 예시 결과입니다:
+![PT TRT Comparison](Visual_Demo/images/pt_trt_comp_cat1.png)
 ---
 
 

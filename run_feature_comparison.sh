@@ -17,7 +17,7 @@ IMAGES=(
 # 체크포인트 리스트
 WEIGHTS=(
   "$SCRIPT_DIR/models/weights/demo_e200.ckpt"
-  #"$SCRIPT_DIR/models/weights/fss_l16.ckpt"
+  "$SCRIPT_DIR/models/weights/fss_l16.ckpt"
 )
 
 # Weight → Tag 변환 함수
