@@ -1,47 +1,71 @@
 #!/bin/bash
+set -euo pipefail
 
-# 이미지 파일 리스트
-IMAGES=("images/cat.jpeg" "images/cat2.jpeg" "images/cat3.jpeg")
-WEIGHTS=("modules/demo_e200.ckpt" "modules/fss_l16.ckpt")
+# 이 스크립트 파일이 있는 디렉토리 → 곧 프로젝트 루트
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# PYTHONPATH 에 프로젝트 루트 추가 (modules 패키지 인식용)
+export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+
+# 이미지 파일 리스트 (Visual_Demo 폴더 아래)
+IMAGES=(
+  "$SCRIPT_DIR/Visual_Demo/images/cat.jpeg"
+  "$SCRIPT_DIR/Visual_Demo/images/cat2.jpeg"
+  "$SCRIPT_DIR/Visual_Demo/images/cat3.jpeg"
+)
+
+# 체크포인트 리스트
+WEIGHTS=(
+  "$SCRIPT_DIR/models/weights/demo_e200.ckpt"
+  #"$SCRIPT_DIR/models/weights/fss_l16.ckpt"
+)
 
 # Weight → Tag 변환 함수
 get_tag_from_weight() {
-    weight_name=$(basename "$1")
-    if [[ "$weight_name" == *"demo"* ]]; then
-        echo "ade20k"
-    elif [[ "$weight_name" == *"fss"* ]]; then
-        echo "fss"
-    else
-        echo "custom"
-    fi
+  local w=$(basename "$1")
+  if [[ "$w" == *demo* ]]; then
+    echo ade20k
+  elif [[ "$w" == *fss* ]]; then
+    echo fss
+  else
+    echo custom
+  fi
 }
 
-# 사용할 이미지 크기 (내림차순 정렬)
-#SIZES=(480 384 320 128)
-SIZES=(480 384 320 256)
-for IMAGE_FILE in "${IMAGES[@]}"; do
-    for WEIGHT in "${WEIGHTS[@]}"; do
-        TAG=$(get_tag_from_weight "$WEIGHT")
-        echo "✅ Running Pytorch Model (Weight : $TAG) for image: $IMAGE_FILE with sizes: ${SIZES[*]}"
-        python3 model_output.py --weights "$WEIGHT" --image "$IMAGE_FILE" --sizes ${SIZES[*]}
+# 사용할 이미지 크기
+SIZES=(480 384 320 260)
 
-        echo "✅ Running TensorRT Inference (Weight : $TAG) for image: $IMAGE_FILE"
-        EXE="./CPP_Project/Feature_Extractor/build/trt_feature_extractor"
-        # 엔진 파일 패턴에 맞는 첫번째 파일을 선택
-        ENGINES=(models/trt_engines/lseg_img_enc_vit_${TAG}__*.trt)
-        if [ ${#ENGINES[@]} -eq 0 ]; then
-            echo "[ERROR] No TRT engine found for tag '${TAG}'!"
-            exit 1
-        fi
-        TRT_PATH=${ENGINES[0]}
+for IMG in "${IMAGES[@]}"; do
+  for WEIGHT in "${WEIGHTS[@]}"; do
+    TAG=$(get_tag_from_weight "$WEIGHT")
 
-        for SIZE in "${SIZES[@]}"; do
-            echo "[INFO] Running C++ extractor: $EXE $TRT_PATH $IMAGE_FILE $SIZE"
-            $EXE "$TRT_PATH" "$IMAGE_FILE" "$SIZE"
-        done
+    echo "✅ Running PyTorch Model (Weight: $TAG) for image: $IMG"
+    python3 "$SCRIPT_DIR/python_trt_comp/model_output.py" \
+      --weights "$WEIGHT" \
+      --image "$IMG" \
+      --sizes "${SIZES[@]}"
+
+    echo "✅ Running TensorRT Extraction (Weight: $TAG) for image: $IMG"
+    EXE="$SCRIPT_DIR/CPP_Project/Feature_Extractor/build/trt_feature_extractor"
+
+    # 패턴에 맞는 첫 번째 trt 엔진을 찾아서 (글로브 확장 허용)
+    ENGINES=( $SCRIPT_DIR/models/trt_engines/lseg_img_enc_vit_${TAG}__*.trt )
+    if [ ${#ENGINES[@]} -eq 0 ]; then
+      echo "[ERROR] No TRT engine found for tag '$TAG'!"
+      exit 1
+    fi
+    TRT_ENGINE=${ENGINES[0]}
+
+    for SIZE in "${SIZES[@]}"; do
+      echo "[INFO] $EXE $TRT_ENGINE $IMG $SIZE"
+      "$EXE" "$TRT_ENGINE" "$IMG" "$SIZE"
     done
-    echo "✅ Comparing Features for image: $IMAGE_FILE"
-        python3 compare_features.py --image "$IMAGE_FILE" --sizes ${SIZES[*]}
+  done
+
+  echo "✅ Comparing Features for image: $IMG"
+  python3 "$SCRIPT_DIR/python_trt_comp/compare_features.py" \
+    --image "$IMG" \
+    --sizes "${SIZES[@]}"
 done
 
-echo "✅ All image comparisons completed!"
+echo "✅ All comparions done!"

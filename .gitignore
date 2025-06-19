@@ -19,6 +19,7 @@ venv/
 htmlcov/
 .tox/
 .nox/
+outputs/
 
 # IDE/편집기 설정
 .vscode/
