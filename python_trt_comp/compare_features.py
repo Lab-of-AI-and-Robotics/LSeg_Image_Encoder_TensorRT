@@ -1,143 +1,194 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+compare_features_all.py
+
+1) PT vs TRT metrics table (all sizes)
+2) Cross-Weight metrics table
+3) PT vs TRT heatmap (size=480)
+4) PT size×weight heatmaps (PT만)
+"""
+import os
 import numpy as np
+import argparse
+import pandas as pd
+from itertools import combinations
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+from sklearn.decomposition import PCA
 import torch
 import torch.nn.functional as F
-import os
-import argparse
-from sklearn.decomposition import PCA
 
-# Cosine Similarity 계산
-def cosine_similarity(feature1, feature2):
-    f1 = torch.tensor(feature1).flatten().float()
-    f2 = torch.tensor(feature2).flatten().float()
-    return F.cosine_similarity(f1.unsqueeze(0), f2.unsqueeze(0)).item()
+def cosine_similarity(a, b):
+    ta = torch.from_numpy(a).flatten().float().unsqueeze(0)
+    tb = torch.from_numpy(b).flatten().float().unsqueeze(0)
+    return float(F.cosine_similarity(ta, tb))
 
-# L2 Distance 계산
-def l2_distance(feature1, feature2):
-    return np.linalg.norm(feature1 - feature2)
+def l2_distance(a, b):
+    return float(np.linalg.norm(a.flatten() - b.flatten()))
 
-
-def reduce_feature_map(feature_map):
-    """
-    feature_map: numpy array of shape (C, H, W)
-    모든 채널의 정보를 이용해 각 픽셀의 C차원 벡터를 1차원 값으로 투영하고,
-    결과를 HxW 이미지로 반환합니다.
-    scikit-learn의 PCA를 활용하여 최적화된 속도로 차원 축소를 수행합니다.
-    """
-    C, H, W = feature_map.shape
-    # 각 픽셀의 feature를 행(row)로 두기 위해 (H*W, C) 형태로 변환합니다.
-    X = feature_map.reshape(C, -1).T  # shape: (H*W, C)
+def reduce_feature_map(fm):
+    # fm: (B×)C×H×W  -> 배치 차원이 있으면 제거
+    if fm.ndim == 4:
+        # 가정: (1, C, H, W)
+        fm = fm.squeeze(0)
+    # 이제 fm.ndim == 3 이 되어야 함
+    C, H, W = fm.shape
+    X = fm.reshape(C, -1).T  # (H*W)×C
     pca = PCA(n_components=1, svd_solver='randomized')
-    projection = pca.fit_transform(X).squeeze()  # shape: (H*W,)
-    projection = projection.reshape(H, W)
-    # [0,1] 범위로 정규화
-    proj_min, proj_max = projection.min(), projection.max()
-    if proj_max - proj_min > 0:
-        projection_norm = (projection - proj_min) / (proj_max - proj_min)
-    else:
-        projection_norm = projection
-    return projection_norm
+    comp = pca.fit_transform(X).squeeze().reshape(H, W)
+    mn, mx = comp.min(), comp.max()
+    return (comp-mn)/(mx-mn) if mx>mn else comp
 
+def load_and_reduce(path):
+    arr = np.load(path)
+    return reduce_feature_map(arr)
 
-if __name__ == '__main__':
-    # 입력 파라미터 설정
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--image", type=str, required=True, help="Input image file (e.g., cat.jpeg, cat2.jpeg, cat3.jpeg)")
-    parser.add_argument("--sizes", type=int, nargs='+', required=True, help="List of image sizes (e.g., 480 384 320 128)")
-    args = parser.parse_args()
-    # 비교할 파일 리스트
-    sizes = args.sizes
-    tags = ["ade20k", "fss"]
-    image_name = os.path.basename(args.image).split('.')[0]
+def find_sizes(sample_dir):
+    return sorted(int(os.path.splitext(f)[0])
+                  for f in os.listdir(sample_dir) if f.endswith(".npy"))
 
-    for tag in tags:
-        print(f"\n▶ Feature Map Comparison for tag: `{tag}`")
-        results = []
+def plot_pt_vs_trt_heatmap(outputs_dir, backbones, weights, images, size):
+    """ size=480 한정, 각 (backbone,weight)별 한 행에 [img_py, img_trt, ...] """
+    modes = ["pt", "trt"]
+    entries = [(b,w) for b in backbones for w in weights[b]]
+    nrows = len(entries)
+    ncols = len(images) * 2
 
-        for size in sizes:
-            pytorch_path = f"outputs/pt_vit_{tag}_{size}_fMap_{image_name}.npy"
-            trt_path = f"outputs/trt_vit_{tag}_{size}_fMap_{image_name}.npy"
+    fig = plt.figure(figsize=(ncols, nrows))
+    gs = GridSpec(nrows, ncols, figure=fig, wspace=0.05, hspace=0.05)
 
-            if not os.path.exists(pytorch_path) or not os.path.exists(trt_path):
-                print(f"[경고] 파일 없음: {pytorch_path} 또는 {trt_path}")
-                continue
-            pytorch_feature = np.load(pytorch_path)
-            trt_feature = np.load(trt_path)
+    for r, (b,w) in enumerate(entries):
+        for i, img in enumerate(images):
+            for m, mode in enumerate(modes):
+                c = i*2 + m
+                ax = fig.add_subplot(gs[r, c])
+                path = os.path.join(outputs_dir, mode, b, w, img, f"{size}.npy")
+                if os.path.exists(path):
+                    ax.imshow(load_and_reduce(path), cmap="viridis")
+                ax.set_xticks([]); ax.set_yticks([])
+                # 첫 행에만 상단에 이미지+mode 표시
+                if r == 0:
+                    ax.set_title(f"{img} ({mode.upper()})", pad=2, fontsize=8)
+                # 첫 열에만 y축에 backbone/weight 표시
+                if c == 0:
+                    ax.set_ylabel(f"{b}/{w}", rotation=0, labelpad=20, fontsize=8)
 
-            cos_sim = cosine_similarity(pytorch_feature, trt_feature)
-            l2_dist = l2_distance(pytorch_feature, trt_feature)
-            results.append((size, cos_sim, l2_dist))
-
-        # 비교 결과 출력
-        print(f"\nFeature Map Comparison Results for {args.image}:")
-        print("Size | Cosine Similarity | L2 Distance")
-        print("---------------------------------------")
-        for size, cos_sim, l2_dist in results:
-            print(f"{size}  | {cos_sim:.6f}         | {l2_dist:.6f}")
-
-    
-     # 🔁 Cross-Tag 비교: 각 size에 대해 ade20k vs fss 비교 (PyTorch & TRT 기준)
-    if len(tags) >= 2:
-        print("\n📊 Cross-Tag Feature Map Comparison (ade20k vs fss):")
-
-        for size in sizes:
-            cross_results = []
-
-            pt_ade_path = f"outputs/pt_vit_ade20k_{size}_fMap_{image_name}.npy"
-            pt_fss_path = f"outputs/pt_vit_fss_{size}_fMap_{image_name}.npy"
-            trt_ade_path = f"outputs/trt_vit_ade20k_{size}_fMap_{image_name}.npy"
-            trt_fss_path = f"outputs/trt_vit_fss_{size}_fMap_{image_name}.npy"
-
-            # 파일 존재 확인
-            if not all(map(os.path.exists, [pt_ade_path, pt_fss_path, trt_ade_path, trt_fss_path])):
-                print(f"[경고] {size}px 비교를 위한 파일 중 일부가 존재하지 않습니다.")
-                continue
-
-            # PyTorch Feature 비교
-            pt_ade_feat = np.load(pt_ade_path)
-            pt_fss_feat = np.load(pt_fss_path)
-            cos_sim_pt = cosine_similarity(pt_ade_feat, pt_fss_feat)
-            l2_dist_pt = l2_distance(pt_ade_feat, pt_fss_feat)
-
-            # TRT Feature 비교
-            trt_ade_feat = np.load(trt_ade_path)
-            trt_fss_feat = np.load(trt_fss_path)
-            cos_sim_trt = cosine_similarity(trt_ade_feat, trt_fss_feat)
-            l2_dist_trt = l2_distance(trt_ade_feat, trt_fss_feat)
-
-            print(f"\n▶ Size {size}")
-            print("Method   | Cosine Similarity | L2 Distance")
-            print("------------------------------------------")
-            print(f"PyTorch  | {cos_sim_pt:.6f}         | {l2_dist_pt:.6f}")
-            print(f"TRT      | {cos_sim_trt:.6f}         | {l2_dist_trt:.6f}")
-
-
-    # ✅ 시각화 (각 태그마다 행, 사이즈마다 열)
-    fig, axes = plt.subplots(len(tags) * 2, len(sizes), figsize=(len(sizes) * 4, len(tags) * 2 * 4))
-
-    for tag_idx, tag in enumerate(tags):
-        for col_idx, size in enumerate(sizes):
-            pytorch_path = f"outputs/pt_vit_{tag}_{size}_fMap_{image_name}.npy"
-            trt_path = f"outputs/trt_vit_{tag}_{size}_fMap_{image_name}.npy"
-
-            if not os.path.exists(pytorch_path) or not os.path.exists(trt_path):
-                continue
-
-            pytorch_feature = np.load(pytorch_path)[0]
-            trt_feature = np.load(trt_path)[0]
-
-            pytorch_map = reduce_feature_map(pytorch_feature)
-            trt_map = reduce_feature_map(trt_feature)
-
-            row_base = tag_idx * 2
-
-            axes[row_base, col_idx].imshow(pytorch_map, cmap="viridis")
-            axes[row_base, col_idx].set_title(f"[{tag}] PyTorch {size}")
-            axes[row_base, col_idx].axis("off")
-
-            axes[row_base + 1, col_idx].imshow(trt_map, cmap="viridis")
-            axes[row_base + 1, col_idx].set_title(f"[{tag}] TRT {size}")
-            axes[row_base + 1, col_idx].axis("off")
-
-    plt.tight_layout()
+    fig.suptitle(f"PT vs TRT (size={size})", y=0.92, fontsize=12)
+    plt.tight_layout(rect=[0,0,1,0.90])
     plt.show()
+
+def plot_pt_size_weight_heatmaps(outputs_dir, backbones, weights, images, sizes):
+    """ PT만, 각 (backbone,weight)별 한 행에 [sz1, sz2, ...] """
+    entries = [(b,w) for b in backbones for w in weights[b]]
+    nrows = len(entries)
+    # 한 행에 [cat(sz1,sz2...), cat2(sz1,sz2...), cat3(...)]
+    ncols = len(sizes) * len(images)
+
+    fig, axs = plt.subplots(nrows, ncols,
+                             figsize=(ncols, nrows),
+                             squeeze=False,
+                             gridspec_kw={'wspace':0.05,'hspace':0.05})
+
+    for r, (b,w) in enumerate(entries):
+        for img_idx, img in enumerate(images):
+            for size_idx, sz in enumerate(sizes):
+                col = img_idx * len(sizes) + size_idx
+                ax = axs[r, col]
+                path = os.path.join(outputs_dir, "pt", b, w, img, f"{sz}.npy")
+                if os.path.exists(path):
+                    ax.imshow(load_and_reduce(path), cmap="viridis")
+                ax.set_xticks([]); ax.set_yticks([])
+                # 첫 행엔 이미지 이름+size
+                if r == 0:
+                    ax.set_title(f"{img} | sz={sz}", pad=2, fontsize=8)
+                # 각 row의 첫 (img0,sz0) 에만 백본/웨이트 레이블
+                if img_idx == 0 and size_idx == 0:
+                    ax.set_ylabel(f"{b}/{w}", rotation=0, labelpad=20, fontsize=8)
+
+    fig.suptitle("PT size×weight heatmaps", y=0.92, fontsize=12)
+    plt.tight_layout(rect=[0,0,1,0.90])
+    plt.show()
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--outputs_dir", default="outputs/feature_maps",
+                        help="root of pt/ and trt/ folders")
+    parser.add_argument("--visualize", action="store_true",
+                        help="show heatmaps")
+    args = parser.parse_args()
+
+    pt_root  = os.path.join(args.outputs_dir, "pt")
+    trt_root = os.path.join(args.outputs_dir, "trt")
+
+    # 백본, 웨이트, 이미지, 사이즈 자동 탐색
+    backbones = sorted(d for d in os.listdir(pt_root)
+                       if os.path.isdir(os.path.join(pt_root, d)))
+    weights = {b: sorted(os.listdir(os.path.join(pt_root, b)))
+               for b in backbones}
+    # 첫 번째 (backbone,weight) 디렉토리에서 이미지 폴더
+    sample_imgs = os.listdir(os.path.join(pt_root, backbones[0], weights[backbones[0]][0]))
+    images = sorted(sample_imgs)
+    # 첫 이미지에서 사이즈 폴더
+    size_dir = os.path.join(pt_root, backbones[0], weights[backbones[0]][0], images[0])
+    sizes = find_sizes(size_dir)
+
+    # 1) PT vs TRT metrics (모든 size)
+    rec_ptvstrt = []
+    for b in backbones:
+        for w in weights[b]:
+            for img in images:
+                for sz in sizes:
+                    p = os.path.join(pt_root, b, w, img, f"{sz}.npy")
+                    t = os.path.join(trt_root, b, w, img, f"{sz}.npy")
+                    if os.path.exists(p) and os.path.exists(t):
+                        fpt = np.load(p)
+                        ftrt = np.load(t)
+                        cos = cosine_similarity(fpt, ftrt)
+                        l2  = l2_distance(fpt, ftrt)
+                        rec_ptvstrt.append({
+                            "Backbone": b, "Weight": w,
+                            "Image": img, "Size": sz,
+                            "Cosine_PTvTRT": cos,
+                            "L2_PTvTRT": l2
+                        })
+    df1 = pd.DataFrame(rec_ptvstrt)
+    print("\n## ▶ PT vs TRT 비교")
+    print(df1.to_markdown(index=False))
+
+    # 2) Cross-Weight metrics (같은 백본 내 모든 페어, 모든 size)
+    rec_cross = []
+    for b in backbones:
+        for w1, w2 in combinations(weights[b], 2):
+            for img in images:
+                for sz in sizes:
+                    p1 = os.path.join(pt_root, b, w1, img, f"{sz}.npy")
+                    p2 = os.path.join(pt_root, b, w2, img, f"{sz}.npy")
+                    t1 = os.path.join(trt_root, b, w1, img, f"{sz}.npy")
+                    t2 = os.path.join(trt_root, b, w2, img, f"{sz}.npy")
+                    if all(os.path.exists(x) for x in (p1,p2,t1,t2)):
+                        f1 = np.load(p1); f2 = np.load(p2)
+                        c_pt = cosine_similarity(f1, f2)
+                        l_pt = l2_distance(f1, f2)
+                        f1t = np.load(t1); f2t = np.load(t2)
+                        c_tr = cosine_similarity(f1t, f2t)
+                        l_tr = l2_distance(f1t, f2t)
+                        rec_cross.append({
+                            "Backbone": b,
+                            "Weight Pair": f"{w1} vs {w2}",
+                            "Image": img, "Size": sz,
+                            "Cosine_PT": c_pt, "L2_PT": l_pt,
+                            "Cosine_TRT": c_tr, "L2_TRT": l_tr
+                        })
+    df2 = pd.DataFrame(rec_cross)
+    print("\n## ▶ Cross-Weight 비교")
+    print(df2.to_markdown(index=False))
+
+    # 3) 시각화
+    if args.visualize:
+        FIXED = 480 if 480 in sizes else sizes[-1]
+        plot_pt_vs_trt_heatmap(args.outputs_dir, backbones, weights, images, FIXED)
+        plot_pt_size_weight_heatmaps(args.outputs_dir, backbones, weights, images, sizes)
+
+if __name__ == "__main__":
+    main()

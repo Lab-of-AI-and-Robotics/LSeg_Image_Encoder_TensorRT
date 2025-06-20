@@ -1,3 +1,4 @@
+#include <filesystem>                  // ← 이걸 추가
 #include <iostream>
 #include <fstream>
 #include <opencv2/opencv.hpp>
@@ -10,6 +11,7 @@
 #include <sys/types.h>
 #include <errno.h>
 
+namespace fs = std::filesystem;        // ← std::filesystem 별칭 선언
 using namespace nvinfer1;
 
 class Logger : public ILogger {
@@ -122,8 +124,9 @@ std::vector<float> run_trt_inference(ICudaEngine* engine, IExecutionContext* con
 
 void process_and_save_feature(const std::string& enginePath,
                               const std::string& imgPath,
-                              int size,
-                              const std::string& tag) {
+                              int size)
+{
+    // 1) 엔진 로드
     Logger logger;
     ICudaEngine* engine = loadEngine(enginePath, logger);
     if (!engine) {
@@ -132,17 +135,48 @@ void process_and_save_feature(const std::string& enginePath,
     }
     IExecutionContext* context = engine->createExecutionContext();
 
+    // 2) 이미지 읽기
     cv::Mat img = cv::imread(imgPath);
     if (img.empty()) {
         std::cerr << "Error loading image: " << imgPath << std::endl;
-        delete context;
-        delete engine;
+        delete context; delete engine;
         return;
     }
 
+    // 3) TRT 추론
     auto featureMap = run_trt_inference(engine, context, img, size);
 
-    // process_and_save_feature() 안에서도 outputName 을 구해야 shape 을 알 수 있습니다.
+    // 4) weight 이름과 backbone 유추
+    std::string engineFile = fs::path(enginePath).filename().string();
+    std::string backbone, weight_name;
+    if (engineFile.rfind("lseg_img_enc_vit_", 0) == 0) {
+        backbone = "vit";
+        auto start = std::string("lseg_img_enc_vit_").size();
+        auto end = engineFile.find("__", start);
+        weight_name = engineFile.substr(start, end - start);
+    } else {
+        backbone = "resnet";
+        auto start = std::string("lseg_img_enc_rn101_").size();
+        auto end = engineFile.find("__", start);
+        weight_name = engineFile.substr(start, end - start);
+    }
+
+    // 5) 이미지 이름 (stem) 추출
+    std::string imgFile = fs::path(imgPath).filename().string();
+    std::string img_stem = imgFile.substr(0, imgFile.find_last_of('.'));
+
+    // 6) 출력 디렉토리 생성
+    fs::path outDir = fs::path("outputs") /
+                      "feature_maps" /
+                      "trt" /
+                      backbone /
+                      weight_name /
+                      img_stem;
+    fs::create_directories(outDir);
+
+    // 7) 출력 파일명: <outDir>/<size>.npy
+    fs::path outFile = outDir / (std::to_string(size) + ".npy");
+    // shape 계산
     int nbIO = engine->getNbIOTensors();
     int outputIdx = -1;
     for (int i = 0; i < nbIO; ++i) {
@@ -152,31 +186,13 @@ void process_and_save_feature(const std::string& enginePath,
             break;
         }
     }
-    if (outputIdx < 0) {
-        std::cerr << "[ERROR] Couldn't find output tensor name\n";
-        delete context;
-        delete engine;
-        return;
-    }
-    std::string outputName = engine->getIOTensorName(outputIdx);
-    auto outDims = context->getTensorShape(outputName.c_str());
-
+    auto outDims = context->getTensorShape(engine->getIOTensorName(outputIdx));
     std::vector<size_t> shape;
-    for (int d = 0; d < outDims.nbDims; ++d) {
+    for (int d = 0; d < outDims.nbDims; ++d)
         shape.push_back(static_cast<size_t>(outDims.d[d]));
-    }
 
-    // Create outputs directory
-    if (mkdir("outputs", 0777) && errno != EEXIST) {
-        std::cerr << "Failed to create outputs directory" << std::endl;
-    }
-    
-    std::string name = imgPath.substr(imgPath.find_last_of("/") + 1);
-    name = name.substr(0, name.find_last_of("."));
-    std::string outFile = "outputs/trt_vit_" + tag + "_" + std::to_string(size)
-                        + "_fMap_" + name + ".npy";
-    cnpy::npy_save(outFile, featureMap.data(), shape);
-    std::cout << "[INFO] Saved: " << outFile << std::endl;
+    cnpy::npy_save(outFile.string(), featureMap.data(), shape, "w");
+    std::cout << "[INFO] Saved → " << outFile << std::endl;
 
     delete context;
     delete engine;
@@ -190,14 +206,9 @@ int main(int argc, char** argv) {
     }
     std::string enginePath = argv[1];
     std::string imgPath    = argv[2];
-    std::string engineFile = enginePath.substr(enginePath.find_last_of("/") + 1);
-    std::string tag = "custom";
-    if (engineFile.find("ade20k") != std::string::npos) tag = "ade20k";
-    if (engineFile.find("fss")    != std::string::npos) tag = "fss";
-
     for (int i = 3; i < argc; ++i) {
         int size = std::stoi(argv[i]);
-        process_and_save_feature(enginePath, imgPath, size, tag);
+        process_and_save_feature(enginePath, imgPath, size);
     }
     return 0;
 }

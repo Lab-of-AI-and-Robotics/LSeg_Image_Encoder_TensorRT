@@ -1,48 +1,44 @@
 cmake_minimum_required(VERSION 3.10)
 project(trt_feature_extractor)
 
+# 1) C++17 사용
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# 2) 의존성 찾기
 find_package(CUDA REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(ZLIB REQUIRED) # 추가
+find_package(ZLIB REQUIRED)
 
-# Include 디렉토리 설정
+# 3) include 경로
 include_directories(
-    ${CMAKE_SOURCE_DIR}/                    # 이 CMakeLists.txt 위치
     ${CUDA_INCLUDE_DIRS}
-    /usr/local/include/opencv4
-    /usr/local/tensorrt/include
-    ${CMAKE_SOURCE_DIR}/../third_party/cnpy   # 상위 폴더의 third_party 경로
+    ${OpenCV_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIRS}          # ZLIB 헤더
+    ${CMAKE_SOURCE_DIR}/../third_party/cnpy
 )
 
-# 라이브러리 경로 설정
-link_directories(
-    /usr/local/lib
-    /usr/local/cuda/lib64
-    /usr/local/tensorrt/lib
-)
-
-# cnpy 라이브러리 추가
-set(CNPY_PATH "${CMAKE_SOURCE_DIR}/../third_party/cnpy")
+# 4) cnpy 정적 라이브러리
 add_library(cnpy STATIC
-    "${CNPY_PATH}/cnpy.cpp"
+    ${CMAKE_SOURCE_DIR}/../third_party/cnpy/cnpy.cpp
 )
 
-# 실행 파일 설정
+# 5) 실행 파일
 add_executable(trt_feature_extractor main.cpp)
 
-# 링크할 라이브러리 설정
-target_link_libraries(trt_feature_extractor
-    ${OpenCV_LIBS}
+# 6) 링크할 라이브러리
+target_link_libraries(trt_feature_extractor PRIVATE
     ${CUDA_LIBRARIES}
-    cudart
+    ${OpenCV_LIBS}
+    cnpy
+    ZLIB::ZLIB
     nvinfer
     nvonnxparser
-    cnpy
-    ZLIB::ZLIB   # 🔥 libz 추가
+    cudart
+    # 만약 GCC<9 이면 아래 주석 해제
+    # stdc++fs
 )
 
+# 7) (선택) 디버그 + 최적화 플래그
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -fdiagnostics-color=always")
