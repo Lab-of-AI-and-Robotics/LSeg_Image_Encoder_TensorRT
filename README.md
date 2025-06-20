@@ -4,6 +4,17 @@
 
 > ✨ **End‑to‑end pipeline for converting the **LSeg** image encoder to ONNX / TensorRT, benchmarking      PyTorch ↔ TRT speed, and verifying numerical fidelity.**
 
+이 프로젝트는 두 가지 **LSeg image encoder** 백본을 지원하며, 실험을 통해 서로 성능을 비교할 수 있습니다:
+
+- **ViT-L/16 (non-ZS)**  
+  - 변환 스크립트: `conversion/model_to_onnx.py`
+  - ONNX 파일명 예시: `lseg_img_enc_vit_demo_e200.onnx`
+- **ResNet101 (ZS-Variant)**  
+  - 변환 스크립트: `conversion/model_to_onnx_zs.py`
+  - ONNX 파일명 예시: `lseg_img_enc_rn101_fss_rn101.onnx`
+
+이후 TRT 변환 스크립트 (`conversion/onnx_to_trt.py`)를 이용하여 TensorRT Engine을 생성하고, 이에 대한 비교실험을 진행할 수 있습니다.
+
 ---
 
 ## 0. TL;DR  (run everything)
@@ -96,13 +107,21 @@ LSeg_Image_Encoder_TensorRT/
 │
 ├── models/
 │   ├── weights/
-│   │   ├── demo_e200.ckpt # 예시: ViT-L/16 CLIP 모델 체크포인트
-│   │   └── fss_l16.ckpt   # 예시: FSS 기반 ViT-L/16 모델 체크포인트
+│   │   ├── ViT/
+│   │   │   ├── demo_e200.ckpt # ViT-L/16 CLIP checkpoint
+│   │   │   └── fss_l16.ckpt # FSS-trained ViT model
+│   │   └── Resnet/
+│   │   ├── coco_fold1.ckpt # ResNet-ZS custom
+│   │   ├── fss_rn101.ckpt # ResNet-ZS FSS variant
+│   │   └── pascal_fold1.ckpt # ResNet-ZS custom
 │   ├── onnx_engines/
-│   │   ├── lseg_img_enc_vit_ade20k.onnx  # 예시 ONNX 모델
+│   │   ├── lseg_img_enc_vit_demo_e200.onnx
+│   │   ├── lseg_img_enc_vit_fss_l16.onnx
+│   │   ├── lseg_img_enc_rn101_coco_fold1.onnx
+│   │   ├── lseg_img_enc_rn101_fss_rn101.onnx
+│   │   └── lseg_img_enc_rn101_pascal_fold1.onnx
 │   └── trt_engines/
-│        │     # 예시 TRT 엔진
-│        └── lseg_img_enc_vit_ade20k__fp16_sparse_ws512MiB.trt 
+│   └── <...>.trt # auto-generated TensorRT engines
 │
 ├── modules/               # LSeg 모델 관련 소스
 │   ├── lseg_module.py     # LSegModule: 이미지 인코더 + 헤드 래핑
@@ -113,9 +132,9 @@ LSeg_Image_Encoder_TensorRT/
 │        └── lseg_vit.py     # CLIP ViT 레이어 분할 및 feature 추출
 │
 ├── conversion/
-│   ├── model_to_onnx.py   # PyTorch → ONNX 변환 스크립트
-│   ├── onnx_to_trt.py     # ONNX → TensorRT 변환 스크립트
-│   └── onnx_to_trt.sh     # 쉘 래퍼 스크립트
+│   ├── model_to_onnx.py # ViT‐L/16 → ONNX
+│   ├── model_to_onnx_zs.py # ResNet101-ZS → ONNX
+│   └── onnx_to_trt.py # ONNX → TensorRT (common)
 │
 ├── CPP_Project/
 │   └── Inference_Time_Tester/      # C++ 벤치마크 프로젝트
@@ -158,43 +177,61 @@ gdown 'https://drive.google.com/uc?id=1Nplkc_JsHIS55d--K2vonOOC3HrppzYy'
 다운로드한 체크포인트는 `models/weights/` 아래에 저장하세요.
 
 ---
-## 5. Build ONNX & TensorRT Engine
+## 5. Building ONNX & TensorRT Engines
 
-### 1) ONNX 모델 변환
+### 5-a. ONNX 모델 변환
 
-```bash
-python3 conversion/model_to_onnx.py \
-  --weights models/weights/demo_e200.ckpt \
-```
+- **ViT 백본**  
+  ```bash
+    python3 conversion/model_to_onnx.py \
+      --weights models/weights/ViT/demo_e200.ckpt
+  ```
+  * `--weights`: 체크포인트 경로
 
-* `--weights`: 체크포인트 경로
+  → `models/onnx_engines/lseg_img_enc_vit_demo_e200.onnx`
 
-### 2) TensorRT 엔진 변환
+- **ResNet-ZS 백본**
+    
+    ```bash
+      python3 conversion/model_to_onnx_zs.py \
+        --weights models/weights/Resnet/fss_rn101.ckpt
+    ```
+    * `--weights`: 체크포인트 경로
+
+    → `models/onnx_engines/lseg_img_enc_rn101_fss_rn101.onnx`
+    
+
+### 5-b. TensorRT 엔진 변환
 **주의**: TensorRT 변환은 GPU 및 환경에 따라 다르므로, **실행할 기기에서 직접 변환**해야 합니다.
 ```bash
 python3 conversion/onnx_to_trt.py \
-  --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
+  --onnx models/onnx_engines/<base>.onnx \
   --workspace 1073741824 \
   --fp16 \
   --sparse \
   --disable-timing-cache \
   --gpu-fallback \
-  --debug 
+  --debug
 ```
 
-#### TensorRT 옵션 설명
+-   ViT, ResNet-ZS 모두 공통으로 `onnx_to_trt.py`를 사용합니다.
+    
+-   생성된 엔진은 `models/trt_engines/` 에 저장됩니다.
 
-| 옵션                         | 종류      | 기본값     | 설명                           |
-| -------------------------- | ------- | ------- | ---------------------------- |
-| `--onnx <PATH>`            | 필수    | —      | 입력 ONNX 파일 경로                |
-| `--workspace <BYTE>`       | integer | `1<<29` | 빌더 워크스페이스 메모리(바이트)           |
-| `--fp16` / `--no-fp16`     | flag    |  true   | FP16 연산 사용 여부                |
-| `--sparse` / `--no-sparse` | flag    |  true   | Sparse weights 전술 사용 여부      |
-| `--disable-timing-cache`   | flag    | false   | 타이밍 캐시 비활성화 (빌드 안정성 ↑, 속도 ↓) |
-| `--gpu-fallback`           | flag    | false   | INT8 모드에서 GPU 연산 폴백 허용       |
-| `--debug`                  | flag    | false   | 디버그 로그 활성화                   |
 
-**엔진 파일명 자동 생성 규칙**: `base__<옵션1>_<옵션2>_..._<wsXXMiB>.trt`
+  #### TensorRT 옵션 설명
+
+  | 옵션                         | 종류      | 기본값     | 설명                           |
+  | -------------------------- | ------- | ------- | ---------------------------- |
+  | `--onnx <PATH>`            | 필수    | —      | 입력 ONNX 파일 경로                |
+  | `--workspace <BYTE>`       | integer | `1<<29` | 빌더 워크스페이스 메모리(바이트)           |
+  | `--fp16` / `--no-fp16`     | flag    |  true   | FP16 연산 사용 여부                |
+  | `--sparse` / `--no-sparse` | flag    |  true   | Sparse weights 전술 사용 여부      |
+  | `--disable-timing-cache`   | flag    | false   | 타이밍 캐시 비활성화 (빌드 안정성 ↑, 속도 ↓) |
+  | `--gpu-fallback`           | flag    | false   | INT8 모드에서 GPU 연산 폴백 허용       |
+  | `--debug`                  | flag    | false   | 디버그 로그 활성화                   |
+
+  **엔진 파일명 자동 생성 규칙**: `base__<옵션1>_<옵션2>_..._<wsXXMiB>.trt`
 
 ---
 
@@ -203,21 +240,23 @@ python3 conversion/onnx_to_trt.py \
 `inference/inferenceTimeTester.py` 를 실행하여 **PyTorch, ONNX, TensorRT** 속도를 비교합니다.
 
 ```bash
-python3 inference/inferenceTimeTester.py \
-  --weights models/weights/demo_e200.ckpt \
-  --iterations 500 \
-  --img_sizes 260 390 520 650 780 910 \
-  --trt_fp16 \
-  --trt_sparse \
-  --trt_no_tc \
-  --trt_gpu_fb \
-  --trt_debug \
+python3 inferenceTimeTester.py \
+  --weights_dir models/weights \
+  --img_sizes 256 320 384 480 640 768 1024 \
+  --iterations 1000 \
+  --trt_fp16 --trt_sparse --trt_no_tc --trt_gpu_fb --trt_debug \
   --trt_workspace 1073741824
 ```
-
+-   `--weights_dir models/weights`
+    
+    -   `ViT/` 안의 `.ckpt` → ViT non-ZS 모델
+        
+    -   `Resnet/` 안의 `.ckpt` → ResNet-ZS 모델
 * `--img_sizes`: 테스트할 입력 크기 목록
 * `--iterations`: 반복 횟수
 * `--trt_*`: TRT 빌드 옵션 (ONNX→TRT에 자동 반영)
+
+
 
 **스크립트 동작**:
 
@@ -226,12 +265,12 @@ python3 inference/inferenceTimeTester.py \
 3. PyTorch → ONNX → TRT 순으로 추론 벤치마크
 
 **결과 예시**:
-
-```
-[RESULT] PyTorch Avg: 12.345 ms ± 0.123 ms
-[RESULT] ONNX   Avg: 10.567 ms ± 0.098 ms
-[RESULT] TRT    Avg:  5.432 ms ± 0.045 ms
-```
+-   결과는 Backbone, Checkpoint, Size 별로 Avg(ms) ± Std(ms) 테이블로 요약됩니다.
+    ```
+    [RESULT] PyTorch Avg: 12.345 ms ± 0.123 ms
+    [RESULT] ONNX   Avg: 10.567 ms ± 0.098 ms
+    [RESULT] TRT    Avg:  5.432 ms ± 0.045 ms
+    ```
 
 ### 6‑a. Test rig
 
@@ -248,22 +287,50 @@ Hardware script (`hardware_spec.sh`) dumps the table automatically.
 ### 6‑b. Results  
 `inferenceTimeTester.py --iterations 1000`
 
-| Size | PyTorch **ms** |  ± | TRT‑Python **ms** | ± | TRT‑C++ **ms** | ± |
-|-----:|---------------:|----:|------------------:|---:|---------------:|---:|
-| 260 | 10.72 | 0.78 | 5.66 | 0.16 | **4.10** | 0.20 |
-| 390 | 20.03 | 1.49 | 8.60 | 0.31 | **4.97** | 0.34 |
-| 520 | 35.42 | 2.88 | 14.76 | 0.27 | **8.26** | 0.34 |
-| 650 | 56.91 | 4.67 | 21.82 | 0.51 | **11.21** | 1.30 |
-| 780 | 86.86 | 6.22 | 32.18 | 0.56 | **17.67** | 0.91 |
-| 910 | 136.54 | 11.55 | 45.71 | 1.95 | **24.85** | 1.08 |
+#### ResNet101-ZS
+
+| Size | PyTorch **ms** | ± | TRT-Python **ms** | ± | TRT-C++ **ms** | ± |
+| --- | --- | --- | --- | --- | --- | --- |
+| 256 | 3.73 | 0.11 | 3.23 | 0.05 | **1.60** | 0.15 |
+| 320 | 4.33 | 0.32 | 4.27 | 0.04 | **1.71** | 0.15 |
+| 384 | 5.23 | 0.46 | 5.60 | 0.04 | **1.92** | 0.15 |
+| 480 | 6.80 | 0.63 | 8.34 | 0.18 | **2.49** | 0.31 |
+| 640 | 10.93 | 1.02 | 14.54 | 0.23 | **4.12** | 0.28 |
+| 768 | 15.99 | 1.28 | 21.16 | 0.22 | **6.17** | 0.36 |
+| 1024 | 27.23 | 2.32 | 37.34 | 0.32 | **10.49** | 0.34 |
+
+
+#### ViT-L/16 (non-ZS)
+
+| Size | PyTorch **ms** | ± | TRT-Python **ms** | ± | TRT-C++ **ms** | ± |
+| --- | --- | --- | --- | --- | --- | --- |
+| 256 | 10.57 | 1.09 | 5.55 | 0.12 | **3.89** | 0.25 |
+| 320 | 14.03 | 1.50 | 6.87 | 0.15 | **4.60** | 0.30 |
+| 384 | 20.41 | 1.93 | 8.55 | 0.35 | **4.71** | 0.39 |
+| 480 | 28.30 | 2.58 | 11.63 | 0.29 | **5.78** | 0.24 |
+| 640 | 57.76 | 4.78 | 21.70 | 0.34 | **10.44** | 0.46 |
+| 768 | 79.41 | 6.04 | 31.13 | 1.84 | **15.77** | 0.60 |
+| 1024 | 173.31 | 12.30 | 58.65 | 1.42 | **30.85** | 0.66 |
 
 **Observations**
+
+[TensorRT Optimization]
 
 * TensorRT ( Python API ) already yields a **2 – 3× speed‑up** over eager PyTorch.
 * The minimalist C++ runner shaves **another ~40 % latency**, dominated by
   * avoiding `pycuda` / DLPack marshalling overheads;
   * pre‑parsing I/O tensor indices at start‑up.
 * Slope ≈ O(N²) w.r.t spatial resolution (expected for ViT windowed attention).
+
+[Backbone Image Encoder]
+-   **ResNet-ZS vs ViT (PyTorch eager)**
+    -   ResNet-ZS is ~2.8× faster at 256² (3.7 ms vs 10.6 ms) and the gap widens to ~6.4× at 1024² (27.2 ms vs 173.3 ms).
+-   **ResNet-ZS vs ViT (TRT-Python)**
+    -   Speed-up is milder (≈1.3–1.5×), e.g. 3.2 ms vs 5.6 ms at 256², and 37.3 ms vs 58.6 ms at 1024².
+-   **ResNet-ZS vs ViT (TRT-C++)**
+    -   C++ runner further reduces latency by ~35–40 %; ResNet-ZS: 1.6 ms→ vs ViT: 3.9 ms at 256².
+-   **Overall**
+    -   ResNet-ZS offers much lower absolute latency across all APIs, while ViT’s heavier computation makes its acceleration benefits more dramatic under TensorRT.
 
 ---
 
