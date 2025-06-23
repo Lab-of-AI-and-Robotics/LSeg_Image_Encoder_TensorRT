@@ -1,5 +1,5 @@
 
-<h1 align="center">LSeg Image Encoder – ONNX & TensorRT</h1>
+<h1 align="center">Real-time LSeg Image Encoder – ONNX & TensorRT</h1>
 <h2 align="center">Author: Joonyeol Choi</h2>
 <h3 align="center">Support: Dr. Jihoon Moon</h3>
 
