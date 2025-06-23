@@ -1,5 +1,7 @@
 # LSeg Image Encoder – ONNX & TensorRT
 
+by Joonyeol Choi
+
 # *아직 작업중입니다! 완료되지 않았습니다!!!*
 
 > ✨ **End‑to‑end pipeline for converting the **LSeg** image encoder to ONNX / TensorRT, benchmarking      PyTorch ↔ TRT speed, and verifying numerical fidelity.**
