@@ -1,21 +1,20 @@
 # LSeg Image Encoder – ONNX & TensorRT
 
-by Joonyeol Choi
-
-# *아직 작업중입니다! 완료되지 않았습니다!!!*
+## **Author:** Joonyeol Choi  
+### **Support:** Dr. Jihoon Moon
 
 > ✨ **End‑to‑end pipeline for converting the **LSeg** image encoder to ONNX / TensorRT, benchmarking      PyTorch ↔ TRT speed, and verifying numerical fidelity.**
 
-이 프로젝트는 두 가지 **LSeg image encoder** 백본을 지원하며, 실험을 통해 서로 성능을 비교할 수 있습니다:
+This project supports two types of **LSeg image encoder** backbones, allowing experimental comparison of their performance:
 
 - **ViT-L/16 (non-ZS)**  
-  - 변환 스크립트: `conversion/model_to_onnx.py`
-  - ONNX 파일명 예시: `lseg_img_enc_vit_demo_e200.onnx`
+  - Conversion script: `conversion/model_to_onnx.py`
+  - Example ONNX filename: `lseg_img_enc_vit_demo_e200.onnx`
 - **ResNet101 (ZS-Variant)**  
-  - 변환 스크립트: `conversion/model_to_onnx_zs.py`
-  - ONNX 파일명 예시: `lseg_img_enc_rn101_fss_rn101.onnx`
+  - Conversion script: `conversion/model_to_onnx_zs.py`
+  - Example ONNX filename: `lseg_img_enc_rn101_fss_rn101.onnx`
 
-이후 TRT 변환 스크립트 (`conversion/onnx_to_trt.py`)를 이용하여 TensorRT Engine을 생성하고, 이에 대한 비교실험을 진행할 수 있습니다.
+You can subsequently use the TRT conversion script (`conversion/onnx_to_trt.py`) to generate TensorRT engines and conduct comparison experiments.
 
 ---
 
@@ -87,35 +86,35 @@ cd CPP_Project/Feature_Extractor     && cmake -B build -S . && cmake --build bui
 ```
 LSeg_Image_Encoder_TensorRT/
 │
-├── CPP_Project/                      # C++ 프로그램 모음
-│   ├── Feature_Extractor/            # Feature 추출기 프로젝트
-│   │   ├── CMakeLists.txt            # CMake 설정
-│   │   └── main.cpp                  # Feature 추출기 메인 코드
-│   ├── Inference_Time_Tester/        # Inference 벤치마크 프로젝트
-│   │   ├── CMakeLists.txt            # CMake 설정
-│   │   └── main.cpp                  # 벤치마크 메인 코드
-│   └── third_party/                  # C++ 서드 파티
-│       └── cnpy/                     # CNpy submodule for numpy I/O
+├── CPP_Project/                       # C++ projects
+│   ├── Feature_Extractor/             # Feature extractor project
+│   │   ├── CMakeLists.txt             # CMake configuration
+│   │   └── main.cpp                   # Feature extractor main code
+│   ├── Inference_Time_Tester/         # Inference benchmarking project
+│   │   ├── CMakeLists.txt             # CMake configuration
+│   │   └── main.cpp                   # Benchmarking main code
+│   └── third_party/                   # Third-party libraries
+│       └── cnpy/                      # CNpy submodule for numpy I/O
 │
-├── Visual_Demo/                      # 데모 스크립트 및 결과
-│   ├── demo.sh                       # demo.sh 스크립트
-│   ├── demo.py                       # demo.py 호출 래퍼
-│   ├── demo_wordFree.sh              # demo_wordFree.sh 스크립트
-│   ├── demo_wordFree.py              # demo_wordFree.py 호출 래퍼
-│   └── images/                       # 시각화 결과 및 입력 이미지
-│       ├── Dog_grass_demo.png        # segmentation 결과 예시
-│       ├── Dog_grass_wordFree.png    # word-free 결과 예시
-│       └── dog_grass.jpeg            # 입력 이미지 예시
+├── Visual_Demo/                       # Demo scripts and results
+│   ├── demo.sh                        # demo.sh script
+│   ├── demo.py                        # Python wrapper for demo.py
+│   ├── demo_wordFree.sh               # demo_wordFree.sh script
+│   ├── demo_wordFree.py               # Python wrapper for demo_wordFree.py
+│   └── images/                        # Visualization results and input images
+│       ├── Dog_grass_demo.png         # Example segmentation result
+│       ├── Dog_grass_wordFree.png     # Example word-free segmentation result
+│       └── dog_grass.jpeg             # Example input image
 │
 ├── models/
 │   ├── weights/
 │   │   ├── ViT/
-│   │   │   ├── demo_e200.ckpt # ViT-L/16 CLIP checkpoint
-│   │   │   └── fss_l16.ckpt # FSS-trained ViT model
+│   │   │   ├── demo_e200.ckpt         # ViT-L/16 CLIP checkpoint
+│   │   │   └── fss_l16.ckpt           # FSS-trained ViT model
 │   │   └── Resnet/
-│   │   ├── coco_fold1.ckpt # ResNet-ZS custom
-│   │   ├── fss_rn101.ckpt # ResNet-ZS FSS variant
-│   │   └── pascal_fold1.ckpt # ResNet-ZS custom
+│   │       ├── coco_fold1.ckpt        # ResNet-ZS custom model
+│   │       ├── fss_rn101.ckpt         # ResNet-ZS FSS variant
+│   │       └── pascal_fold1.ckpt      # ResNet-ZS custom model
 │   ├── onnx_engines/
 │   │   ├── lseg_img_enc_vit_demo_e200.onnx
 │   │   ├── lseg_img_enc_vit_fss_l16.onnx
@@ -123,88 +122,80 @@ LSeg_Image_Encoder_TensorRT/
 │   │   ├── lseg_img_enc_rn101_fss_rn101.onnx
 │   │   └── lseg_img_enc_rn101_pascal_fold1.onnx
 │   └── trt_engines/
-│   └── <...>.trt # auto-generated TensorRT engines
+│       └── <...>.trt                  # Auto-generated TensorRT engines
 │
-├── modules/               # LSeg 모델 관련 소스
-│   ├── lseg_module.py     # LSegModule: 이미지 인코더 + 헤드 래핑
-│   ├── lseg_full.py       # LSegFull: 백본과 헤드 포함 전체 네트워크
-│   ├── models/            # 내부 서브모듈
-│        ├── lseg_blocks.py  # RefineNet 블록과 skip-connection 처리
-│        ├── lseg_net.py     # 네트워크 assemble 유틸리티
-│        └── lseg_vit.py     # CLIP ViT 레이어 분할 및 feature 추출
+├── modules/                           # LSeg model-related source code
+│   ├── lseg_module.py                 # LSegModule: wraps image encoder + head
+│   ├── lseg_full.py                   # LSegFull: complete network (encoder + decoder)
+│   ├── models/                        # Internal submodules
+│       ├── lseg_blocks.py             # RefineNet blocks and skip-connections
+│       ├── lseg_net.py                # Network assembly utilities
+│       └── lseg_vit.py                # CLIP ViT layer partitioning and feature extraction
 │
-├── conversion/
-│   ├── model_to_onnx.py # ViT‐L/16 → ONNX
-│   ├── model_to_onnx_zs.py # ResNet101-ZS → ONNX
-│   └── onnx_to_trt.py # ONNX → TensorRT (common)
+├── conversion/                        # Model conversion scripts
+│   ├── model_to_onnx.py               # ViT‐L/16 → ONNX
+│   ├── model_to_onnx_zs.py            # ResNet101-ZS → ONNX
+│   └── onnx_to_trt.py                 # ONNX → TensorRT (common)
 │
-├── CPP_Project/
-│   └── Inference_Time_Tester/      # C++ 벤치마크 프로젝트
-│       ├── CMakeLists.txt          # CMake 설정
-│       ├── main.cpp                # 벤치마크 메인 코드
-│       └── build/                  # 빌드 결과물 (trt_cpp_infer_time_tester 실행파일)
+├── python_trt_comp/                   # Python-based feature comparison scripts
+│   ├── compare_features.py            # Compare feature maps (Cosine/L2)
+│   ├── compare_inputs.py              # Compare input tensors
+│   ├── model_output.py                # PyTorch feature extraction script
+│   └── run_feature_comparison.sh      # Run the complete comparison pipeline
 │
-├── python_trt_comp/                  # Python 기반 Feature 비교 스크립트
-│   ├── compare_features.py           # Feature map 비교 (Cosine/L2)
-│   ├── compare_inputs.py             # 입력 tensor 비교
-│   ├── model_output.py               # PyTorch Feature 추출 스크립트
-│   └── run_feature_comparison.sh     # 전체 파이프라인 실행 스크립트
+├── inferenceTimeTester.py             # Main inference benchmarking script (root directory)
 │
-├── inferenceTimeTester.py # 추론 및 벤치마크 메인 스크립트 (루트 폴더)
-│
-├── requirements.txt       # Python 패키지 목록
-├── Makefile                    # new – one‑shot builder wrapper ❶
-└── README.md              # 본 파일
+├── requirements.txt                   # Python package list
+├── Makefile                           # One-shot builder wrapper
+└── README.md                          # This file
+
 ```
-
 ---
-## 4. 모델 다운로드
+## 4. Model Download
 
-**Weight 파일**은 LSeg 공식 저장소에서 가져오세요.
-LSeg 공식 저장소 : **[https://github.com/isl-org/lang-seg](https://github.com/isl-org/lang-seg)**
+Download **weights** from the official LSeg repository:
+**[https://github.com/isl-org/lang-seg](https://github.com/isl-org/lang-seg)**
 
 ```bash
-# 메인 ViT-L/16 모델 (demo_e200.ckpt)
 pip install gdown
-# demo_e200.ckpt 다운로드
+# Main ViT-L/16 model (demo_e200.ckpt)
 gdown 'https://drive.google.com/uc?id=1FTuHY1xPUkM-5gaDtMfgCl3D0gR89WV7'
 
-# FSS 데이터셋 기반 모델 예시
+# FSS-based models
 # fss_rn101.ckpt (ResNet101)
 gdown 'https://drive.google.com/uc?id=1UIj49Wp1mAopPub5M6O4WW-Z79VB1bhw'
 # fss_l16.ckpt (ViT-L/16)
 gdown 'https://drive.google.com/uc?id=1Nplkc_JsHIS55d--K2vonOOC3HrppzYy'
 ```
 
-다운로드한 체크포인트는 `models/weights/` 아래에 저장하세요.
+Save the downloaded checkpoints under `models/weights/`.
 
 ---
 ## 5. Building ONNX & TensorRT Engines
 
-### 5-a. ONNX 모델 변환
+### 5-a. ONNX Model Conversion
 
-- **ViT 백본**  
+- **ViT Backbone**
   ```bash
     python3 conversion/model_to_onnx.py \
       --weights models/weights/ViT/demo_e200.ckpt
   ```
-  * `--weights`: 체크포인트 경로
+  * `--weights`: Checkpoint address
 
   → `models/onnx_engines/lseg_img_enc_vit_demo_e200.onnx`
 
-- **ResNet-ZS 백본**
+- **ResNet-ZS Backbone**
     
     ```bash
       python3 conversion/model_to_onnx_zs.py \
         --weights models/weights/Resnet/fss_rn101.ckpt
     ```
-    * `--weights`: 체크포인트 경로
+    * `--weights`: Checkpoint address
 
     → `models/onnx_engines/lseg_img_enc_rn101_fss_rn101.onnx`
     
-
-### 5-b. TensorRT 엔진 변환
-**주의**: TensorRT 변환은 GPU 및 환경에 따라 다르므로, **실행할 기기에서 직접 변환**해야 합니다.
+### 5-b. TensorRT Engine Conversion
+**Caution**: The TensorRT conversion depends on your GPU and environment. Therefore, it must be performed **on the target device**.
 ```bash
 python3 conversion/onnx_to_trt.py \
   --onnx models/onnx_engines/<base>.onnx \
@@ -216,30 +207,31 @@ python3 conversion/onnx_to_trt.py \
   --debug
 ```
 
--   ViT, ResNet-ZS 모두 공통으로 `onnx_to_trt.py`를 사용합니다.
+-  Both ViT and ResNet-ZS commonly uses  `onnx_to_trt.py`.
     
--   생성된 엔진은 `models/trt_engines/` 에 저장됩니다.
+-   Generated engines will be saved in models/trt_engines/.
 
 
-  #### TensorRT 옵션 설명
+  #### TensorRT Options
 
-  | 옵션                         | 종류      | 기본값     | 설명                           |
-  | -------------------------- | ------- | ------- | ---------------------------- |
-  | `--onnx <PATH>`            | 필수    | —      | 입력 ONNX 파일 경로                |
-  | `--workspace <BYTE>`       | integer | `1<<29` | 빌더 워크스페이스 메모리(바이트)           |
-  | `--fp16` / `--no-fp16`     | flag    |  true   | FP16 연산 사용 여부                |
-  | `--sparse` / `--no-sparse` | flag    |  true   | Sparse weights 전술 사용 여부      |
-  | `--disable-timing-cache`   | flag    | false   | 타이밍 캐시 비활성화 (빌드 안정성 ↑, 속도 ↓) |
-  | `--gpu-fallback`           | flag    | false   | INT8 모드에서 GPU 연산 폴백 허용       |
-  | `--debug`                  | flag    | false   | 디버그 로그 활성화                   |
+| Option                    | Type     | Default | Description                              |
+| ------------------------- | -------- | ------- | ---------------------------------------- |
+| `--onnx <PATH>`           | required | —       | Path to input ONNX file                  |
+| `--workspace <BYTE>`      | integer  | `1<<29` | Builder workspace memory in bytes        |
+| `--fp16` / `--no-fp16`    | flag     | true    | Enable or disable FP16 precision         |
+| `--sparse` / `--no-sparse`| flag     | true    | Enable or disable sparse weights         |
+| `--disable-timing-cache`  | flag     | false   | Disable timing cache (↑ stability, ↓ speed) |
+| `--gpu-fallback`          | flag     | false   | Allow GPU fallback in INT8 mode          |
+| `--debug`                 | flag     | false   | Enable debug logging                     |
 
-  **엔진 파일명 자동 생성 규칙**: `base__<옵션1>_<옵션2>_..._<wsXXMiB>.trt`
+**Engine filename auto-generation rule**:  
+`base__<option1>_<option2>_..._<wsXXMiB>.trt`
 
 ---
 
 ## 6.  Latency Benchmark
 
-`inference/inferenceTimeTester.py` 를 실행하여 **PyTorch, ONNX, TensorRT** 속도를 비교합니다.
+Run `inference/inferenceTimeTester.py` to benchmark the latency of **PyTorch, ONNX, TensorRT**.
 
 ```bash
 python3 inferenceTimeTester.py \
@@ -251,23 +243,23 @@ python3 inferenceTimeTester.py \
 ```
 -   `--weights_dir models/weights`
     
-    -   `ViT/` 안의 `.ckpt` → ViT non-ZS 모델
+    -  ViT non-ZS Model : `.ckpt` in the `ViT/` 
         
-    -   `Resnet/` 안의 `.ckpt` → ResNet-ZS 모델
-* `--img_sizes`: 테스트할 입력 크기 목록
-* `--iterations`: 반복 횟수
-* `--trt_*`: TRT 빌드 옵션 (ONNX→TRT에 자동 반영)
+    -  ResNet-ZS Model : `.ckpt` in the `Resnet/`
+* `--img_sizes`:  List of input sizes for benchmarking
+* `--iterations`: Number of iterations
+* `--trt_*`: TRT Build Options (Automatically apply to ONNX→TRT)
 
 
+**Script Behavior**:
 
-**스크립트 동작**:
+1. Automatically generates ONNX file if missing.
+2. Automatically generates TensorRT engine if missing.
+3. Performs inference benchmarking in the order: PyTorch → ONNX → TRT.
 
-1. ONNX 파일이 없으면 자동 생성
-2. TRT 엔진이 없으면 자동 생성
-3. PyTorch → ONNX → TRT 순으로 추론 벤치마크
+**Example Result**:
 
-**결과 예시**:
--   결과는 Backbone, Checkpoint, Size 별로 Avg(ms) ± Std(ms) 테이블로 요약됩니다.
+- Results summarized by Backbone, Checkpoint, and Size in Avg(ms) ± Std(ms) table format:
     ```
     [RESULT] PyTorch Avg: 12.345 ms ± 0.123 ms
     [RESULT] ONNX   Avg: 10.567 ms ± 0.098 ms
@@ -340,44 +332,46 @@ Hardware script (`hardware_spec.sh`) dumps the table automatically.
 
 ### Visual_Demo/demo.sh
 
-이 스크립트는 **ONNX 모델**을 이용해 예시 이미지를 분할(segmentation)하고, 결과를 시각화합니다.
+This script performs segmentation on a given image using the **ONNX model** and visualizes the results.
 
 ```bash
-# 사용 예시 (루트에서 실행)
+# Example usage (run from root directory)
 python3 Visual_Demo/demo.py --image Visual_Demo/images/dog_grass.jpeg \
                             --labels "dog, grass, other" \
                             --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
                             --size 384
 ```
 
-* `--image`: 입력 이미지 경로
-* `--labels`: 콤마(,)로 구분된 라벨 목록 (예: "cat, sky, building")
-* `--onnx`: ONNX 모델 파일 경로
-* `--size`: 모델 입력 크기 (HxW)
+* `--image`:  Path to input image
+* `--labels`: Comma-separated label list (e.g., "cat, sky, building")
+* `--onnx`: Path to ONNX model file
+* `--size`: Input size for the model (HxW)
 
-스크립트 내부에서는 `demo.py` 를 호출하며, 좌측에 원본 이미지, 우측에 segmentation 결과를 출력합니다.
+Internally, the script calls demo.py, displaying the original image on the left and the segmentation result on the right.
 
 
 ### Visual_Demo/demo\_wordFree.sh
 
-이 스크립트는 **Full CLIP Vocab 기반** 픽셀 단위 분류를 수행하고, **등장한 단어**를 콘솔에 출력하며 시각화합니다.
+This script performs pixel-level classification **using the full CLIP vocabulary** and prints the identified words to the console while visualizing the results.
+
 
 ```bash
-# 사용 예시 (루트에서 실행)
+# Example usage (run from root directory)
 python3 Visual_Demo/demo_wordFree.py --image Visual_Demo/images/dog_grass.jpeg \
                                      --onnx models/onnx_engines/lseg_img_enc_vit_ade20k.onnx \
                                      --size 384
 ```
 
-* `--image`: 입력 이미지 경로
-* `--onnx`: ONNX 모델 파일 경로
-* `--size`: 모델 입력 크기 (HxW)
+* `--image`: Path to input image
+* `--onnx`: Path to ONNX model file
+* `--size`: Input size for the model (HxW)
 
-스크립트 내부에서는 `demo_wordFree.py` 를 호출하여 이미지 내 픽셀마다 CLIP 전체 vocab 중 가장 유사도가 높은 토큰을 선택, 해당 단어들을 출력하고 결과를 시각화합니다.
+Internally, the script calls `demo_wordFree.py`, selecting the most similar token from the full CLIP vocabulary for each pixel and visualizing the results while printing the identified words.
+
 
 ### Visual Results
 
-아래는 `Visual_demo/images/` 폴더에 저장된 예시 결과입니다:
+Below are example results saved in the `Visual_demo/images/` directory:
 
 |                     Segmentation (`demo.py`)                     |                  Word-free (`demo_wordFree.py`)                  |      |
 | :--------------------------------------------------------------: | :--------------------------------------------------------------: | ---- |
@@ -480,10 +474,13 @@ The combined quantitative (cosine, L2) and qualitative (heat-map) analyses demon
 
 ## 9. Additional Notes
 
-* **ONNX opset\_version=14** 사용
-* 동적 입력 크기 지원: `torch.onnx.export(... dynamic_axes=...)` 설정 참조
-* GPU 벤치마크를 위해 `onnxruntime-gpu` 필요: `pip install onnxruntime-gpu`
-* CUDAExecutionProvider 확인:
+* Using **ONNX opset_version=14**
+* Supports dynamic input size: Refer to `torch.onnx.export(... dynamic_axes=...)` setting
+* Requires `onnxruntime-gpu` for GPU benchmarking:  
+  ```bash
+  pip install onnxruntime-gpu
+  ```
+* Verify CUDAExecutionProvider:
 
 ```python
 import onnxruntime as ort
