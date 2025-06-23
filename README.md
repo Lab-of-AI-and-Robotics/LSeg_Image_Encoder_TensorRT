@@ -1,7 +1,8 @@
-# LSeg Image Encoder – ONNX & TensorRT
 
-## **Author:** Joonyeol Choi  
-### **Support:** Dr. Jihoon Moon
+<h1 align="center">LSeg Image Encoder – ONNX & TensorRT</h1>
+<h2 align="center">Author: Joonyeol Choi</h2>
+<h3 align="center">Support: Dr. Jihoon Moon</h3>
+
 
 > ✨ **End‑to‑end pipeline for converting the **LSeg** image encoder to ONNX / TensorRT, benchmarking      PyTorch ↔ TRT speed, and verifying numerical fidelity.**
 
